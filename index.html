@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>围棋死活大师 · 过关斩将</title>
+<link rel="stylesheet" href="style.css">
+<!--PWA-HEAD-->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#a35f28">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="过关斩将">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!--/PWA-HEAD-->
+</head>
+<body>
+<div class="wrap">
+
+<div id="home">
+  <h1>围棋死活大师 · 过关斩将</h1>
+  <div class="sub">1500 道题 · 级位 90 关 · 段位 60 关 · 每关 10 题</div>
+
+  <div class="who">
+    <span class="wholab">练习档案</span>
+    <button id="whoBtn" class="whobtn"><b id="whoName">—</b><i>▾</i></button>
+  </div>
+  <div class="whoPanel hide" id="whoPanel"></div>
+
+  <section class="card">
+    <div class="levels" id="levels"></div>
+  </section>
+
+  <section class="card">
+    <div class="nowtop">
+      <div class="nowmain">
+        <div class="nowrank" id="nowRank">花一 · 级位入门</div>
+        <div class="nowjie">第 <b id="nowRound">1</b> 轮 · 第 <b id="nowJie">1</b> 关 · 第 <b id="nowTi">1</b> / 10 题</div>
+      </div>
+      <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="42" class="ringbg"/>
+        <circle id="ringfg" cx="50" cy="50" r="42" class="ringfg"/>
+        <text id="ringtxt" x="50" y="55" class="rt1">0/10</text>
+      </svg>
+    </div>
+    <div class="dots" id="dots"></div>
+    <div class="roundline" id="roundLine">本轮 0 / 100 题</div>
+
+    <div class="row"><span>每题限时</span>
+      <span class="seg" id="limitSeg">
+        <button type="button" data-s="15">15 秒</button>
+        <button type="button" data-s="30">30 秒</button>
+        <button type="button" data-s="60">60 秒</button>
+      </span>
+    </div>
+    <div class="hint" id="limitHint">15/30/60 秒只限<b>每题第一步</b>：第一手走对后就不再计时，后面走完为止。</div>
+
+    <button class="btn" id="resume">开始闯关</button>
+    <button class="btn ghost" id="newRun">新建（这个难度从第 1 关开始）</button>
+    <div class="hint" id="newHint"></div>
+  </section>
+
+  <section class="card">
+    <h2>今天</h2>
+    <div class="today">
+      <div><b id="tdN">0</b><span>题</span></div>
+      <div><b id="tdMin">0</b><span>分钟</span></div>
+      <div><b id="tdFirst">—</b><span>首答正确率</span></div>
+    </div>
+    <div class="row"><span>每日节奏</span>
+      <span class="seg" id="modeSeg">
+        <button type="button" data-m="free">自由</button>
+        <button type="button" data-m="time">固定时间</button>
+      </span>
+    </div>
+    <div class="row hide" id="rowMin"><span>每天时长</span>
+      <span class="inline"><input id="numMin" type="number" min="5" max="60" step="5" value="10">
+        <button class="chip" data-min="10">10</button>
+        <button class="chip" data-min="15">15</button>
+        <button class="chip" data-min="20">20</button></span>
+    </div>
+    <div class="hint" id="todayHint">自由模式：想做多久做多久</div>
+  </section>
+
+  <section class="card">
+    <h2>活跃地图</h2>
+    <div class="row"><span>看多久</span>
+      <span class="seg" id="mapSeg">
+        <button type="button" data-v="month">本月</button>
+        <button type="button" data-v="12w">近 12 周</button>
+      </span>
+    </div>
+    <div class="row"><span>连续做题</span><span id="streak">连续 0 天</span></div>
+    <div class="calhead"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="cal" id="cal"></div>
+    <div class="legend">
+      <span>未做</span><i class="lv0"></i><span>1–10</span><i class="lv1"></i><span>11–20</span><i class="lv2"></i>
+      <span>21–30</span><i class="lv3"></i><span>31–50</span><i class="lv4"></i><span>50+</span><i class="lv5"></i>
+    </div>
+    <div class="hint" id="calHint">本月每天做了多少题</div>
+    <div class="row" style="margin-top:6px"><span>本月累计</span><span id="calSum">—</span></div>
+  </section>
+
+  <section class="card">
+    <h2>我的战绩</h2>
+    <div class="statgrid">
+      <div class="stat"><b id="stOk">0</b><span>累计过关</span></div>
+      <div class="stat"><b id="stFirst">0</b><span>最佳轮次</span></div>
+      <div class="stat"><b id="stPass">0</b><span>闯关次数</span></div>
+      <div class="stat"><b id="stTime">0</b><span>超时次数</span></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span>音效</span>
+      <span class="inline"><button class="chip on" id="sfxBtn">开</button>
+        <input id="sfxVol" type="range" min="0" max="100" step="5" value="45" title="音量"></span>
+    </div>
+    <div class="row"><span>过关后自动进入下一关</span><button class="chip on" id="autoBtn">开</button></div>
+  </section>
+
+  <details class="fold card">
+    <summary>错题集（<span id="wrongN">0</span>）</summary>
+    <div class="foldbody">
+      <div id="wrongList" class="wrongList"><div class="emptyLine">还没有错题</div></div>
+      <div class="hint">点一条可以跟着编号走一遍（不计分）。</div>
+    </div>
+  </details>
+
+  <details class="fold card">
+    <summary>怎么玩（第一次先看这里）</summary>
+    <div class="foldbody">
+      <ol class="how">
+        <li><b>先选时间</b>15 / 30 / 60 秒，只限<b>每一题的第一步</b>：必须在秒数内走出正解第一手，之后电脑自动应对，直到整题走完。</li>
+        <li><b>再选难度</b>只有两个入口：<b>级位</b>（90 关）和<b>段位</b>（60 关）。点一下选中，再点「开始闯关」。</li>
+        <li><b>孩子档案</b>顶部「练习档案」可以给每个孩子建一个档案，级位/段位的进度各存各的，互不影响。</li>
+        <li><b>每关 10 题，允许错 1 题</b>错题不会当场结束，做满 10 题再算总账：错 2 题以上本关不通过；超时也算错一题；下在非法点（已经有子 / 不入气 / 打劫）只提示，不算错。</li>
+        <li><b>答错一题</b>可以点「答案」看正解（现在明白了吧！），整条手顺会用 1、2、3… 标出来，第一手带红圈。一题有多条正解时，下面会出现「答案1 / 答案2 / 答案3…」，点哪个就显示哪条。</li>
+        <li><b>答不出</b>也可以直接点棋盘下方的「跳过本题」，会记一次错（每关只允许错 1 题）。</li>
+        <li><b>轮次</b>第 1 轮 100 题（10 关），第 2 轮 200 题（20 关），第 3 轮 300 题……每轮都从第 1 关重来，越往后做得越多。级位 9 轮（900 题）、段位 6 轮（600 题）。</li>
+        <li><b>今天</b>「每日节奏」可选自由或固定时间；固定时间做完当天额度会提醒休息，也可以「再来 5 分钟」。</li>
+        <li><b>活跃地图 / 错题集</b>下面能看到本月每天做了多少题、连续几天；做错的题会进错题集，点一条可以跟着编号走一遍。</li>
+      </ol>
+      <div class="howbox">
+        <div class="howt">轮次怎么加</div>
+        <div class="howline">
+          <span>100题</span><i>›</i><span>200题</span><i>›</i><span>300题</span><i>›</i>
+          <span class="leaf">…</span>
+        </div>
+        <div class="howsub">每 10 关 = 100 题 · 每轮从第 1 关重来 · 级位 9 轮 / 段位 6 轮</div>
+      </div>
+      <ul class="warn">
+        <li>别用无痕模式、别清浏览器数据，进度存在本机，清掉就没了。</li>
+        <li>iPad / iPhone 用 Safari 打开 → 分享 → 添加到主屏幕，以后全屏打开、断网也能做。</li>
+      </ul>
+      <button class="btn quiet" id="resetAll">清空全部档案和进度</button>
+    </div>
+  </details>
+
+  <details class="fold card">
+    <summary>手动设置进度</summary>
+    <div class="foldbody">
+      <div class="row"><label for="mSetLv">难度</label><span><select id="mSetLv">
+        <option value="0">级位</option><option value="1">段位</option></select></span></div>
+      <div class="row"><label for="mSetRound">第几轮</label><span><input id="mSetRound" type="number" min="1" max="9" step="1" value="1"></span></div>
+      <div class="row"><label for="mSetDone">已做到第几题</label><span><input id="mSetDone" type="number" min="0" step="1" value="0"></span></div>
+      <button class="btn ghost" id="mSetApply">应用（覆盖该难度的进度）</button>
+      <div class="hint" id="mSetHint">第 1 轮共 100 题（10 关）</div>
+    </div>
+  </details>
+
+  <details class="fold card">
+    <summary>备份 · 换设备</summary>
+    <div class="foldbody">
+      <p class="hint" style="margin-top:0">进度只存在这台设备（按孩子档案分开）。换 iPad / 换浏览器时，用二维码或进度码搬一次。</p>
+      <button class="btn quiet" id="mkCode">显示本机进度二维码</button>
+      <div class="qrBox hide" id="qrBox"></div>
+      <div class="qrHint hide" id="qrHint">用另一台设备点「扫码导入」对准这个码</div>
+
+      <button class="btn quiet" id="copyCode">复制进度码（文本）</button>
+      <textarea id="codeBox" class="codeBox" rows="3" spellcheck="false"
+        placeholder="点「显示本机进度二维码」后，进度码会出现在这里；也可以把别的设备的码粘进来再点恢复"></textarea>
+      <button class="btn quiet" id="useCode">从文本进度码恢复</button>
+
+      <button class="btn quiet" id="scanCode">扫码导入（用这台设备的相机）</button>
+      <label class="btn quiet fileBtn" for="qrFile">从相册选二维码图片</label>
+      <input type="file" id="qrFile" accept="image/*" class="fileInput">
+      <div class="scanWrap hide" id="scanWrap">
+        <video id="scanVideo" autoplay playsinline muted></video>
+        <div class="scanTip" id="scanTip">把另一台设备的二维码放进画面</div>
+        <button class="btn ghost" id="scanCancel">取消</button>
+      </div>
+      <canvas id="scanCanvas" class="hide"></canvas>
+
+      <label class="chk"><input type="checkbox" id="withWrong" checked> 连错题记录一起搬</label>
+      <label class="chk"><input type="checkbox" id="withMap" checked> 连活跃地图一起搬</label>
+      <div class="hint" id="codeHint">导入会覆盖本机当前档案（名字、进度、今日统计、错题、地图）。</div>
+    </div>
+  </details>
+
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">a3df29c08df3</span>
+<!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button><!--/PWA-UPDATE-->
+  </div>
+</div>
+
+<div id="play" class="hide">
+  <div class="top">
+    <button id="quit" class="btn ghost small">返回</button>
+    <span id="phead">花一 · 第 1 关 · 第 1 / 10 题</span>
+    <span id="clock">60″</span>
+  </div>
+  <div class="dayline hide" id="dayline"><span id="dayLeft"></span><span id="dayTotal"></span></div>
+  <div class="goal" id="goal">死活题：黑先净杀</div>
+  <div class="wd">
+    <svg id="svg" viewBox="0 0 400 400"></svg>
+    <div class="mask hide" id="mask">
+      <b id="maskTitle">过关</b>
+      <span id="maskSub"></span>
+      <button class="btn" id="maskBtn">继续</button>
+    </div>
+  </div>
+  <div class="fb" id="fb">点黑子落子</div>
+  <div class="ansRow hide" id="ansRow"></div>
+
+  <button class="btn quiet" id="skipBtn">跳过本题（记一次错）</button>
+
+  <div class="result hide" id="result">
+    <div class="rhead"><b id="rTitle">本关不通过</b><i id="rReason">错 2 题</i></div>
+    <div class="rline" id="rLine">第 1 关 · 对 0 题 错 2 题</div>
+    <div class="rsub" id="rSub">本档案最佳 0 关 · 再试一次从第 1 题开始</div>
+    <div class="racts">
+      <button class="btn" id="again">再试本关</button>
+      <button class="btn ghost" id="toHome">回首页</button>
+    </div>
+  </div>
+
+  <div class="acts">
+    <button class="btn ghost hide" id="ansBtn">答案</button>
+    <button class="btn ghost hide" id="nextBtn">下题 →</button>
+  </div>
+  <div class="pinfo">
+    <span>本关 对 <b id="pcount">0</b> · 错 <b id="pwrong">0</b></span>
+    <span>段内第 <b id="pno">1</b> 号</span>
+    <span>最佳 <b id="pbest">0</b> 关</span>
+  </div>
+</div>
+
+</div>
+
+<!--PWA-SCRIPT-->
+<script>
+(function () {
+  var local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  var ok = "serviceWorker" in navigator && (location.protocol === "https:" || local);
+  var btn = document.getElementById("checkUpdate");
+  if (!ok) { if (btn) btn.style.display = "none"; return; }
+
+  var reg = null;
+  var hadController = !!navigator.serviceWorker.controller;   // 首次安装不自动刷新
+  var reloadPending = false;
+  var manual = false;
+
+  function playing() {
+    var p = document.getElementById("play");
+    return !!(p && !p.classList.contains("hide"));
+  }
+  function reloadNow() {
+    try { sessionStorage.setItem("gshj_updated", "1"); } catch (e) {}
+    location.reload();
+  }
+  function later() {
+    if (playing()) { reloadPending = true; return; }
+    reloadNow();
+  }
+  function reset(t) {
+    if (!btn) return;
+    btn.textContent = t;
+    setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
+  }
+
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").then(function (r) {
+      reg = r;
+      // 回到前台时主动问一次服务器
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") r.update().catch(function () {});
+      });
+    }).catch(function () {});
+  });
+
+  // 默认自动更新：新版本接管后自动刷新；做题中先挂起，回首页再刷
+  navigator.serviceWorker.addEventListener("controllerchange", function () {
+    if (!hadController && !manual) { hadController = true; return; }
+    later();
+  });
+  var play = document.getElementById("play");
+  if (play && window.MutationObserver) {
+    new MutationObserver(function () {
+      if (reloadPending && !playing()) reloadNow();
+    }).observe(play, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  // 手动「检查更新」
+  if (btn) btn.onclick = function () {
+    if (!reg) { reset("暂不可用"); return; }
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = "检查中…";
+    manual = true;
+    reg.update().then(function () {
+      setTimeout(function () {
+        btn.disabled = false;
+        if (reg.installing || reg.waiting) {
+          btn.textContent = "正在更新…";       // 新 SW 接管后会自动刷新
+        } else {
+          reset("已是最新");
+        }
+      }, 1600);
+    }).catch(function () {
+      btn.disabled = false;
+      reset("网络不通");
+    });
+  };
+
+  // 刚更新完回首页时提示一句
+  try {
+    if (sessionStorage.getItem("gshj_updated")) {
+      sessionStorage.removeItem("gshj_updated");
+      window.addEventListener("load", function () {
+        var tip = document.createElement("div");
+        tip.textContent = "已更新到最新版本";
+        tip.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);" +
+          "background:#a35f28;color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;" +
+          "z-index:99;box-shadow:0 8px 24px rgba(43,33,24,.2)";
+        document.body.appendChild(tip);
+        setTimeout(function () { tip.remove(); }, 2600);
+      });
+    }
+  } catch (e) {}
+})();
+</script>
+<!--/PWA-SCRIPT-->
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsqr.js"></script>
+<script src="data.js"></script>
+<script src="sounds.js"></script>
+<script src="sfx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
