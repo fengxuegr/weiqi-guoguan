@@ -1096,34 +1096,37 @@ function syncManual() {
   const maxR = maxRoundOf(lv);
   $("mSetRound").max = String(maxR);
   let round = Math.max(1, Math.min(maxR, +$("mSetRound").value || 1));
-  if (String(round) !== $("mSetRound").value) $("mSetRound").value = round;   // 超上限就写回
+  if (String(round) !== $("mSetRound").value) $("mSetRound").value = round;
+
   const target = Math.min(round * ROUND_UNIT, DATA[lv].p.length);
-  $("mSetDone").max = String(Math.max(0, target - 1));
-  let done = Math.max(0, Math.min(target - 1, +$("mSetDone").value || 0));
-  if (String(done) !== $("mSetDone").value) $("mSetDone").value = done;
-  $("mSetHint").textContent = "第 " + round + " 轮共 " + target + " 题（" + Math.ceil(target / N_TI) +
-    " 关）· 填 " + done + " = 第 " + (Math.floor(done / N_TI) + 1) + " 关第 " + (done % N_TI + 1) + " 题";
+  const maxG = Math.max(1, Math.ceil(target / N_TI));
+  $("mSetGuan").max = String(maxG);
+  let guan = Math.max(1, Math.min(maxG, +$("mSetGuan").value || 1));
+  if (String(guan) !== $("mSetGuan").value) $("mSetGuan").value = guan;
+  let ti = Math.max(1, Math.min(N_TI, +$("mSetTi").value || 1));
+  if (String(ti) !== $("mSetTi").value) $("mSetTi").value = ti;
+
+  const done = (guan - 1) * N_TI + (ti - 1);
+  $("mSetHint").textContent = "第 " + round + " 轮共 " + target + " 题（" + maxG +
+    " 关）· 从第 " + guan + " 关第 " + ti + " 题开始（已做 " + done + " 题）";
+  return { lv, round, guan, ti, done };
 }
 $("mSetLv").onchange = syncManual;
 $("mSetRound").oninput = syncManual;
-$("mSetDone").oninput = syncManual;
+$("mSetGuan").oninput = syncManual;
+$("mSetTi").oninput = syncManual;
 $("mSetApply").onclick = () => {
-  syncManual();
-  const lv = +$("mSetLv").value || 0;
-  const round = +$("mSetRound").value || 1;
-  const target = Math.min(round * ROUND_UNIT, DATA[lv].p.length);
-  const done = Math.max(0, Math.min(target - 1, +$("mSetDone").value || 0));
-  if (!confirm("把" + LEVELS[lv].nm + "设成第 " + round + " 轮、已完成 " + done + " 题？\n\n会覆盖这个难度原来的进度。")) return;
-  const L = prof().lv[lv];
-  L.round = round;
-  L.done = done;
-  L.guanDone = done % N_TI;
+  const m = syncManual();
+  if (!confirm("把" + LEVELS[m.lv].nm + "设成第 " + m.round + " 轮、从第 " + m.guan + " 关第 " + m.ti + " 题开始？\n\n会覆盖这个难度原来的进度。")) return;
+  const L = prof().lv[m.lv];
+  L.round = m.round;
+  L.done = m.done;
+  L.guanDone = m.ti - 1;
   L.wrong = 0;
   L.active = true;
-  L.bestRound = Math.max(L.bestRound, round);
+  L.bestRound = Math.max(L.bestRound, m.round);
   save(); renderHome();
-  $("mSetHint").textContent = "已设置：" + LEVELS[lv].nm + " · 第 " + round + " 轮 · 第 " +
-    (Math.floor(done / N_TI) + 1) + " 关第 " + (done % N_TI + 1) + " 题";
+  $("mSetHint").textContent = "已设置：" + LEVELS[m.lv].nm + " · 第 " + m.round + " 轮 · 第 " + m.guan + " 关第 " + m.ti + " 题";
 };
 syncManual();
 
