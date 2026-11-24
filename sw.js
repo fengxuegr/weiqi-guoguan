@@ -3,7 +3,7 @@
  * 版本号由 build.py 写入，版本一变就换新缓存并清掉旧缓存。
  * 只在 https 或 localhost 下生效；局域网 http://192.168.x.x 不会注册，属预期。
  */
-const V = "a3df29c08df3";
+const V = "008442ebd1d7";
 const PREFIX = "gshj-";
 const CACHE = PREFIX + V;
 const ASSETS = [
@@ -23,7 +23,12 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // 新版本先进入 waiting，由页面弹「有新版本」提示，用户点了才接管
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {

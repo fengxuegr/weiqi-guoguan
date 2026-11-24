@@ -199,8 +199,16 @@
     </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">a3df29c08df3</span>
-<!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button><!--/PWA-UPDATE-->
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">008442ebd1d7</span>
+<!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
+<div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
+  <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
+  <span class="updateActs">
+    <button type="button" id="updateGo">点这里更新</button>
+    <button type="button" id="updateLater">稍后</button>
+  </span>
+</div>
+<!--/PWA-UPDATE-->
   </div>
 </div>
 
@@ -256,88 +264,85 @@
   var btn = document.getElementById("checkUpdate");
   if (!ok) { if (btn) btn.style.display = "none"; return; }
 
-  var reg = null;
-  var hadController = !!navigator.serviceWorker.controller;   // 首次安装不自动刷新
-  var reloadPending = false;
-  var manual = false;
+  var reg = null, waiting = null, asked = false, pending = false, snoozeUntil = 0;
+  var bar = document.getElementById("updateBar");
+  var play = document.getElementById("play");
+  function playing() { return !!(play && !play.classList.contains("hide")); }
+  function snoozed() { return Date.now() < snoozeUntil; }
+  function showBar() { if (bar && !snoozed()) bar.classList.remove("hide"); }
+  function hideBar() { if (bar) bar.classList.add("hide"); }
 
-  function playing() {
-    var p = document.getElementById("play");
-    return !!(p && !p.classList.contains("hide"));
+  // 做题中先挂起，回到首页再提示
+  function showUpdate(r) {
+    waiting = r;
+    if (snoozed()) return;
+    if (playing()) { pending = true; return; }
+    pending = false;
+    showBar();
   }
-  function reloadNow() {
-    try { sessionStorage.setItem("gshj_updated", "1"); } catch (e) {}
-    location.reload();
-  }
-  function later() {
-    if (playing()) { reloadPending = true; return; }
-    reloadNow();
-  }
-  function reset(t) {
-    if (!btn) return;
-    btn.textContent = t;
-    setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
+  if (play && window.MutationObserver) {
+    new MutationObserver(function () {
+      if (pending && !playing()) { pending = false; showBar(); }
+    }).observe(play, { attributes: true, attributeFilter: ["class"] });
   }
 
   window.addEventListener("load", function () {
     navigator.serviceWorker.register("sw.js").then(function (r) {
       reg = r;
-      // 回到前台时主动问一次服务器
+      if (r.waiting && navigator.serviceWorker.controller) showUpdate(r);
+      r.addEventListener("updatefound", function () {
+        var nw = r.installing;
+        if (!nw) return;
+        nw.addEventListener("statechange", function () {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) showUpdate(r);
+        });
+      });
       document.addEventListener("visibilitychange", function () {
-        if (document.visibilityState === "visible") r.update().catch(function () {});
+        if (document.visibilityState !== "visible") return;
+        if (r.waiting && navigator.serviceWorker.controller) showUpdate(r);
+        r.update().catch(function () {});
       });
     }).catch(function () {});
   });
 
-  // 默认自动更新：新版本接管后自动刷新；做题中先挂起，回首页再刷
   navigator.serviceWorker.addEventListener("controllerchange", function () {
-    if (!hadController && !manual) { hadController = true; return; }
-    later();
+    if (asked) location.reload();
   });
-  var play = document.getElementById("play");
-  if (play && window.MutationObserver) {
-    new MutationObserver(function () {
-      if (reloadPending && !playing()) reloadNow();
-    }).observe(play, { attributes: true, attributeFilter: ["class"] });
-  }
 
-  // 手动「检查更新」
+  var go = document.getElementById("updateGo"), later = document.getElementById("updateLater");
+  if (go) go.onclick = function () {
+    if (waiting && waiting.waiting) { asked = true; waiting.waiting.postMessage("SKIP_WAITING"); }
+    else location.reload();
+  };
+  if (later) later.onclick = function () {
+    snoozeUntil = Date.now() + 30 * 60 * 1000;
+    pending = false;
+    hideBar();
+  };
+
   if (btn) btn.onclick = function () {
-    if (!reg) { reset("暂不可用"); return; }
+    if (!reg) { btn.textContent = "暂不可用"; setTimeout(function () { btn.textContent = "检查更新"; }, 2000); return; }
     if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = "检查中…";
-    manual = true;
     reg.update().then(function () {
       setTimeout(function () {
         btn.disabled = false;
-        if (reg.installing || reg.waiting) {
-          btn.textContent = "正在更新…";       // 新 SW 接管后会自动刷新
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          snoozeUntil = 0;
+          showUpdate(reg);
+          btn.textContent = "发现新版本";
         } else {
-          reset("已是最新");
+          btn.textContent = "已是最新";
         }
-      }, 1600);
+        setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
+      }, 1500);
     }).catch(function () {
       btn.disabled = false;
-      reset("网络不通");
+      btn.textContent = "网络不通";
+      setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
     });
   };
-
-  // 刚更新完回首页时提示一句
-  try {
-    if (sessionStorage.getItem("gshj_updated")) {
-      sessionStorage.removeItem("gshj_updated");
-      window.addEventListener("load", function () {
-        var tip = document.createElement("div");
-        tip.textContent = "已更新到最新版本";
-        tip.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);" +
-          "background:#a35f28;color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;" +
-          "z-index:99;box-shadow:0 8px 24px rgba(43,33,24,.2)";
-        document.body.appendChild(tip);
-        setTimeout(function () { tip.remove(); }, 2600);
-      });
-    }
-  } catch (e) {}
 })();
 </script>
 <!--/PWA-SCRIPT-->
