@@ -3,7 +3,7 @@
  * 版本号由 build.py 写入，版本一变就换新缓存并清掉旧缓存。
  * 只在 https 或 localhost 下生效；局域网 http://192.168.x.x 不会注册，属预期。
  */
-const V = "54ac6a1ed4c1";
+const V = "6b00f7607123";
 const PREFIX = "gshj-";
 const CACHE = PREFIX + V;
 const ASSETS = [
@@ -23,8 +23,13 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  // 新版本先进入 waiting，由页面弹「有新版本」提示，用户点了才接管
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // 迁移版：旧页面还没有「更新提示条」，必须先接管，否则会一直卡在旧缓存。
+  // 进入稳定版后可以改回「等待 + 提示条」。
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(ASSETS))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("message", (e) => {
