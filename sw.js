@@ -3,7 +3,7 @@
  * 版本号由 build.py 写入，版本一变就换新缓存并清掉旧缓存。
  * 只在 https 或 localhost 下生效；局域网 http://192.168.x.x 不会注册，属预期。
  */
-const V = "0401531503e8";
+const V = "1423af906649";
 const PREFIX = "gshj-";
 const CACHE = PREFIX + V;
 const ASSETS = [

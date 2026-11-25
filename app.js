@@ -445,7 +445,7 @@ let placed = [], alive = [], step = 0, answered = false, firstMove = false;
 let wrongMarks = [];
 let cell = 30, ox = 0, oy = 0;
 let autoTimer = null;
-let practice = false, practiceLine = null, ansIdx = 0;
+let practice = false, practiceLine = null, ansIdx = 0, peekAns = false;
 let mapView = "month";
 let tiStart = 0, timeUp = false, dayTimer = null;
 
@@ -927,7 +927,7 @@ function showAnswerRow() {
     row.appendChild(b);
   });
   const wb = document.createElement("button");
-  wb.type = "button"; wb.className = "chip walk"; wb.id = "walkBtn"; wb.textContent = "跟着走一遍";
+  wb.type = "button"; wb.className = "chip walk"; wb.id = "walkBtn"; wb.textContent = "不看答案走一遍";
   wb.onclick = () => startPractice();
   row.appendChild(wb);
   row.classList.remove("hide");
@@ -940,17 +940,36 @@ function startPractice() {
   if (!practiceLine.length) return;
   hideAnswer();
   practice = true;
+  peekAns = false;                 // 先不给答案码，凭记忆走
   placed = []; step = 0; answered = false; wrongMarks = [];
   firstMove = true;
   stopCd(); stopDayTimer();
+  $("clock").className = "done";
+  $("clock").textContent = "练习";        // 跟走不计时，别留一个像还在倒计时的秒数
   alive = [practiceLine];
   showNext("下题 →", afterTi);
-  draw(); markGuide();
-  fb("跟着走一遍：红圈是第一手，按 1、2、3… 走，白棋会自动应。", "");
+  $("restartGuan").classList.add("hide");
+  $("ansBtn").textContent = "看答案";
+  $("ansBtn").classList.remove("hide");  // 记不住可以临时调出来
+  draw(); markGuide();                    // markGuide 按 peekAns 决定要不要标答案
+  fb(practiceTip(), "");
+}
+// 跟走默认一手都不标（凭记忆走），点「看答案」才把整条手顺调出来
+function practiceTip() {
+  if (peekAns) return "整条手顺在这里（1、2、3…）。看完点「收起答案」，再自己走。";
+  return "凭记忆走一遍：走对了白棋会自动应。记不住就点「看答案」，不算错。";
+}
+function toggleGuide() {
+  peekAns = !peekAns;
+  draw();
+  if (peekAns) markGuide();
+  $("ansBtn").textContent = peekAns ? "收起答案" : "看答案";
+  fb(practiceTip(), "");
 }
 function markGuide() {
   const svg = $("svg"), marks = $("marks");
-  if (!practiceLine || !marks) return;
+  if (!marks) return;
+  if (!practiceLine || !peekAns) { marks.innerHTML = ""; return; }   // 不看答案就一手都不标
   let html = "";
   for (let i = step; i < practiceLine.length; i++) {
     const [r, c] = practiceLine[i];
@@ -974,22 +993,24 @@ function onPracticeTap(e) {
   const py = (e.clientY - rect.top) / rect.height * vb.height;
   let r = Math.round((py - oy) / cell), c = Math.round((px - ox) / cell);
   r = clamp(r + el._r0, 0, 18); c = clamp(c + el._c0, 0, 18);
-  if (playBoard().board[r][c] !== 0) { fb("这里已经有子，跟着编号走。", ""); return; }
+  if (playBoard().board[r][c] !== 0) { fb("这里已经有子，换个点。", ""); return; }
   const j = branchStep(alive, step, r, c);
-  if (!j.hit) { fb("这手不对，跟着编号走。", "no"); return; }
+  if (!j.hit) { fb(peekAns ? "这手不对，照编号走。" : "这手不对。记不住就点「看答案」偷看一眼。", "no"); return; }
   placed.push([r, c, 1]);
   SFX.stone();
   if (j.white) { placed.push([j.white[0], j.white[1], 2]); setTimeout(() => SFX.white(), 130); }
   step = j.step;
   draw();
-  if (j.done) { answered = true; fb("走对了！这题记下了。", "ok"); $("nextBtn").classList.remove("hide"); }
-  else { markGuide(); fb("对，继续。", "ok"); }
+  if (j.done) { answered = true; fb("整条走完了！这题算你会了。", "ok"); $("nextBtn").classList.remove("hide"); }
+  else { if (peekAns) markGuide(); fb("对，继续。", "ok"); }
 }
 function hideAnswer() {
   $("ansBtn").classList.add("hide");
+  $("ansBtn").textContent = "答案";
   $("nextBtn").classList.add("hide");
   $("skipBtn").classList.add("hide");
   practice = false;
+  peekAns = false;
   const row = $("ansRow");
   row.classList.add("hide");
   row.innerHTML = "";
@@ -1022,6 +1043,7 @@ function practiceWrong(it) {
   cur = b[it.idx];
   practiceLine = cur.qa ? cur.qa[0] : (cur.q || []);
   practice = true;
+  peekAns = true;                  // 错题集练习本来就是"跟着编号走"
   placed = []; step = 0; answered = false; wrongMarks = [];
   firstMove = true;
   stopCd(); stopDayTimer();
@@ -1041,6 +1063,7 @@ function practiceWrong(it) {
   $("clock").textContent = "练习";
   $("skipBtn").classList.add("hide");
   $("restartGuan").classList.add("hide");
+  $("ansBtn").classList.add("hide");
   hideMask();
   draw(); markGuide();
   fb("跟着编号走一遍，不计分。", "");
@@ -1104,7 +1127,7 @@ $("toHome").onclick = goHome;
 $("quit").onclick = goHome;
 $("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
 
-$("ansBtn").onclick = () => { showAnswerRow(); };
+$("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {
   if (answered) return;
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
