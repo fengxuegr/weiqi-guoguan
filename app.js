@@ -120,6 +120,19 @@ const guanNo = L => Math.floor((L.done - L.guanDone) / N_TI) + 1;
 const tiNo = L => L.guanDone + 1;
 const correctOf = L => L.guanDone - L.wrong;
 
+// 这个难度是否已全部走完（轮次/关都是自动推进的，走完了就不再往下推）
+function clearedOf(L, gi) {
+  const g = gi == null ? S.sel : gi;
+  const len = DATA[g].p.length;
+  return L.round >= Math.max(1, Math.ceil(len / ROUND_UNIT)) &&
+         L.done >= Math.min(L.round * ROUND_UNIT, len);
+}
+// 通关后关号会算到 91/61 这种越界值，这里收回到最后一关
+const guanShown = (L, gi) => {
+  const g = gi == null ? S.sel : gi;
+  return clearedOf(L, g) ? Math.ceil(DATA[g].p.length / N_TI) : guanNo(L);
+};
+
 function todayStr() {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -154,6 +167,7 @@ function leafSVG() {
 
 /* ---------- 首页 ---------- */
 function lvSub(L, gi) {
+  if (clearedOf(L, gi)) return "第 " + L.round + " 轮 · " + totalGuan(gi) + " 关全部通关";
   if (L.active) return "第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关";
   if (L.bestRound > 0 && (L.done > 0 || L.plays > 0)) return "最佳 第 " + L.bestRound + " 轮";
   return "未开始";
@@ -191,7 +205,8 @@ function renderWho() {
     row.className = "prow" + (i === S.cur ? " on" : "");
     const sum = LEVELS.map((lv, k) => {
       const L = p.lv[k];
-      return lv.nm + (L.active ? " 第" + L.round + "轮 第" + guanNo(L) + "关" : (L.bestRound ? " 第" + L.bestRound + "轮" : " 未开始"));
+      return lv.nm + (clearedOf(L, k) ? " 第" + L.round + "轮 全通关"
+        : (L.active ? " 第" + L.round + "轮 第" + guanNo(L) + "关" : (L.bestRound ? " 第" + L.bestRound + "轮" : " 未开始")));
     }).join(" · ");
     row.innerHTML = `<span class="pn">${p.name}</span><span class="pm">${sum}</span>`;
     row.onclick = e => {
@@ -357,13 +372,16 @@ function renderHome() {
   renderLevels();
   renderWho();
   const L = slotState(), lv = LEVELS[S.sel];
+  // 轮次和关都是自动推进的，「重刷」不是"开新一轮"，只在整条难度走完时才露面，平时不占位
+  const cleared = clearedOf(L);
+  const dGuan = guanShown(L), dTi = cleared ? N_TI : tiNo(L), dDone = cleared ? N_TI : L.guanDone;
   $("nowRank").textContent = lv.nm;
   $("nowRound").textContent = L.round;
-  $("nowJie").textContent = guanNo(L);
-  $("nowTi").textContent = tiNo(L);
-  $("ringtxt").textContent = L.guanDone + "/10";
+  $("nowJie").textContent = dGuan;
+  $("nowTi").textContent = dTi;
+  $("ringtxt").textContent = dDone + "/10";
   const C = 2 * Math.PI * 42;
-  $("ringfg").style.strokeDasharray = (L.guanDone / 10 * C) + " " + C;
+  $("ringfg").style.strokeDasharray = (dDone / 10 * C) + " " + C;
 
   // 圆环＝本关（10 题）进度；进度条＝本轮（100/200/300 题）进度
   const target = targetOf(L.round);
@@ -380,14 +398,19 @@ function renderHome() {
     (L.done >= target ? " · 已完成" : "");
 
   const started = L.active || L.done > 0 || L.plays > 0;
+  $("resume").classList.toggle("hide", cleared);
   $("resume").textContent = started
     ? "继续闯关（第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " 题）"
     : "开始闯关";
-  $("newRun").classList.toggle("hide", !started);
-  if (L.active) {
-    const left = Math.max(0, 1 - L.wrong);
+  $("newRun").classList.toggle("hide", !cleared);
+  $("newRun").classList.toggle("ghost", !cleared);
+  if (cleared) {
+    $("newHint").textContent = lv.nm + " " + totalGuan(S.sel) + " 关全部走完了 · 点上面「重刷」从第 1 轮再来";
+  } else if (L.active) {
     $("newHint").textContent = "本关已对 " + correctOf(L) + " 题 · " +
-      (left ? "还能错 " + left + " 题" : "已错 " + L.wrong + " 题，本关过不了");
+      (L.wrong === 0 ? "还能错 1 题"
+        : L.wrong === 1 ? "已错 1 题，再错一题就过不了"
+        : "已错 " + L.wrong + " 题，本关过不了");
   } else if (started) {
     $("newHint").textContent = "上次停在第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " 题";
   } else {
@@ -766,7 +789,7 @@ function roundPassed(correct, wrong) {
     L.done = targetOf(doneRound);
     save();
     SFX.done();
-    setMask("全部通过！", LEVELS[S.sel].nm + "的 " + totalGuan(S.sel) + " 关全部走完了。可以点「新建」从第 1 轮再来。",
+    setMask("全部通过！", LEVELS[S.sel].nm + "的 " + totalGuan(S.sel) + " 关全部走完了。回首页点「重刷」可以从第 1 轮再来。",
             "回首页", () => { hideMask(); goHome(); });
   }
 }
