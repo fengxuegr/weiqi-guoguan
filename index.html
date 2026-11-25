@@ -200,7 +200,7 @@
     </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.4</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.5</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -307,8 +307,30 @@
     }).catch(function () {});
   });
 
+  // 新 SW 一接管就自己换过来：主屏 App 常驻内存，不主动刷会一直停在旧版。
+  // 做题中不打断，等回到首页再刷；8 秒内不重复刷，避免来回循环。
+  var hadController = !!navigator.serviceWorker.controller;
+  var swapPending = false, swapping = false;
+  function trySwap() {
+    if (swapping || !hadController) return;
+    if (playing()) { swapPending = true; return; }   // 做题中先记下，回首页再换
+    try {                                            // 只有真的要刷了才盖时间戳，防止 8 秒内反复刷
+      var t = +sessionStorage.getItem("swswap") || 0;
+      if (Date.now() - t < 8000) return;
+      sessionStorage.setItem("swswap", String(Date.now()));
+    } catch (e) {}
+    swapping = true;
+    location.reload();
+  }
+  if (play && window.MutationObserver) {
+    new MutationObserver(function () {
+      if (swapPending && !playing()) { swapPending = false; trySwap(); }
+    }).observe(play, { attributes: true, attributeFilter: ["class"] });
+  }
+
   navigator.serviceWorker.addEventListener("controllerchange", function () {
-    if (asked) location.reload();
+    if (asked) { location.reload(); return; }
+    trySwap();
   });
 
   var go = document.getElementById("updateGo"), later = document.getElementById("updateLater");
