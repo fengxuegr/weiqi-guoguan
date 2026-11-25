@@ -490,25 +490,42 @@ function resumeCd() {
 }
 
 /* ---------- 每日时间（固定时间模式） ---------- */
+// today.sec 只在"一题做完"时结算，所以显示不能直接拿它算——
+// 否则整道题里「今日剩」一动不动，做完一题才猛跳一下。这里额外记一段活的时间。
+let dayBaseMs = 0, dayRunAt = 0;          // 已结算的毫秒 + 本段计时起点（0 = 停着）
+function daySpentMs() { return dayBaseMs + (dayRunAt ? Date.now() - dayRunAt : 0); }
+function dayPause() {
+  if (!dayRunAt) return;
+  dayBaseMs = daySpentMs();
+  dayRunAt = 0;
+}
 function dayLeftSec() {
   ensureToday();
-  return Math.max(0, S.min * 60 + S.bonus - prof().today.sec);
+  return Math.max(0, S.min * 60 + S.bonus - daySpentMs() / 1000);
 }
 function startDayTimer() {
   stopDayTimer();
   if (S.mode !== "time") return;
   $("dayline").classList.remove("hide");
+  if (!dayRunAt) dayRunAt = Date.now();    // 接着上次停的地方走，不重置基准
   const tick = () => {
     const left = dayLeftSec();
     const total = S.min * 60 + S.bonus;
-    $("dayLeft").textContent = "今日剩 " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0");
+    const s = Math.max(0, Math.floor(left % 60));
+    $("dayLeft").textContent = "今日剩 " + Math.floor(left / 60) + ":" + String(s).padStart(2, "0");
     $("dayTotal").textContent = "共 " + Math.round(total / 60) + " 分钟";
     if (left <= 0 && !timeUp) { timeUp = true; }
   };
   tick();
   dayTimer = setInterval(tick, 1000);
 }
-function stopDayTimer() { if (dayTimer) { clearInterval(dayTimer); dayTimer = null; } $("dayline").classList.add("hide"); }
+function stopDayTimer() {
+  if (dayTimer) { clearInterval(dayTimer); dayTimer = null; }
+  dayPause();
+  $("dayline").classList.add("hide");
+}
+// 每开一道题：基准对齐到已结算的 today.sec（这题的时间还没算进去）
+function daySyncBase() { dayBaseMs = prof().today.sec * 1000; dayRunAt = 0; }
 
 /* ---------- 棋盘 ---------- */
 const NB = 19, DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
@@ -685,6 +702,7 @@ function onTap(e) {
 function tiSolved() {
   answered = true;
   stopCd();
+  dayPause();
   $("skipBtn").classList.add("hide");
   const p = prof(), L = slotState();
   p.stat.ok++;
@@ -708,6 +726,7 @@ function tiFailed(reason, r, c) {
   if (answered) return;
   answered = true;
   stopCd();
+  dayPause();
   $("skipBtn").classList.add("hide");
   const p = prof(), L = slotState();
   L.wrong++;
@@ -730,9 +749,12 @@ function tiFailed(reason, r, c) {
   save();
   $("pwrong").textContent = L.wrong;
   $("pcount").textContent = correctOf(L);
-  fb(reason === "skip"
-      ? "这题跳过了（记 1 错）。可以点「答案」看正解，或「下题」。"
-      : (reason === "timeout" ? "时间到，这题算错。可以点「答案」看正解。" : "怎么会失败呢！点「答案」看正解，或直接「下题」。"), "no");
+  const why = reason === "skip" ? "这题跳过了（记 1 错）。"
+    : (reason === "timeout" ? "时间到，这题算错。" : "怎么会失败呢！");
+  fb(L.wrong >= 2
+     ? "本关已错 " + L.wrong + " 题，过不了了。点「答案」看正解，或点「重新开始本关」重来。"
+     : why + "可以点「答案」看正解，或「下题」。", "no");
+  syncRestart();
   $("ansBtn").classList.remove("hide");
   showNext("下题 →", afterTi);
 }
@@ -763,6 +785,7 @@ function guanPassed() {
   SFX.done();
   fb("第 " + passedNo + " 关通过 · 对 " + correct + " 题 错 " + wrong + " 题", "ok");
   $("nextBtn").classList.add("hide");
+  $("restartGuan").classList.add("hide");
   $("pcount").textContent = correct;
   $("pwrong").textContent = wrong;
   const nextNo = passedNo + 1;
@@ -811,6 +834,7 @@ function guanFailed() {
   $("fb").classList.add("hide");
   $("nextBtn").classList.add("hide");
   $("ansBtn").classList.add("hide");
+  $("restartGuan").classList.add("hide");
   $("result").classList.remove("hide");
   $("pwrong").textContent = wrong;
   $("pcount").textContent = correct;
@@ -837,15 +861,22 @@ function enterTi() {
   $("pcount").textContent = correctOf(L);
   $("pwrong").textContent = L.wrong;
   $("skipBtn").classList.remove("hide");
+  syncRestart();
   fb(L.wrong === 0 ? "限时 " + S.limit + " 秒，走出正解第一手。"
-     : (L.wrong === 1 ? "本关已错 1 题，再错就过不了。" : "本关已错 " + L.wrong + " 题，已经过不了，把剩下的题练完。"), "");
+     : (L.wrong === 1 ? "本关已错 1 题，再错就过不了。"
+        : "本关已错 " + L.wrong + " 题，过不了了。点「重新开始本关」重来，或把剩下 " + (N_TI - L.guanDone) + " 题做完。"), "");
   draw();
   const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
   L.left = 0;
   save();
   tiStart = Date.now();
   startCd(left);
-  if (S.mode === "time") startDayTimer();
+  if (S.mode === "time") { daySyncBase(); startDayTimer(); }
+}
+// 错满 2 题本关已经判死，给一个"重开本关"的显式出口
+function syncRestart() {
+  const L = slotState();
+  $("restartGuan").classList.toggle("hide", !(L.active && !practice && L.wrong >= 2));
 }
 
 /* ---------- 答案 / 练习 ---------- */
@@ -1009,6 +1040,7 @@ function practiceWrong(it) {
   $("clock").className = "done";
   $("clock").textContent = "练习";
   $("skipBtn").classList.add("hide");
+  $("restartGuan").classList.add("hide");
   hideMask();
   draw(); markGuide();
   fb("跟着编号走一遍，不计分。", "");
@@ -1077,6 +1109,20 @@ $("skipBtn").onclick = () => {
   if (answered) return;
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
   tiFailed("skip");
+};
+// 错满 2 题后重开本关：本关做过的题清零，从本关第 1 题重来
+$("restartGuan").onclick = () => {
+  const L = slotState();
+  if (!confirm("重新开始第 " + guanNo(L) + " 关？\n\n本关做过的题会清零，从第 1 题重来；今天的做题数和错题集都保留。")) return;
+  L.done = Math.max(0, L.done - L.guanDone);
+  L.guanDone = 0;
+  L.wrong = 0;
+  L.left = 0;
+  L.active = true;
+  save();
+  $("result").classList.add("hide");
+  $("ansRow").classList.add("hide");
+  enterTi();
 };
 
 $("mapSeg").onclick = e => {
