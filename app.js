@@ -142,13 +142,6 @@ function ensureToday() {
   if (!p.today || p.today.d !== todayStr()) p.today = blankDay(), p.today.d = todayStr();
   if (!p.hist[todayStr()]) p.hist[todayStr()] = { n: 0, sec: 0 };
 }
-function addSec(sec) {
-  const p = prof();
-  ensureToday();
-  p.today.sec += Math.max(0, Math.round(sec));
-  const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
-  h.sec = p.today.sec;
-}
 
 /* ---------- 图标 ---------- */
 function flowerSVG() {
@@ -489,26 +482,37 @@ function resumeCd() {
   cdTimer = setInterval(tickCd, 100);
 }
 
-/* ---------- 每日时间（固定时间模式） ---------- */
-// today.sec 只在"一题做完"时结算，所以显示不能直接拿它算——
-// 否则整道题里「今日剩」一动不动，做完一题才猛跳一下。这里额外记一段活的时间。
-let dayBaseMs = 0, dayRunAt = 0;          // 已结算的毫秒 + 本段计时起点（0 = 停着）
+/* ---------- 每日时间（做题页停留时长） ---------- */
+// 口径：今天在做题页待了多久。答题、看答案、过关结算、跟走练习都算；
+// 回首页 / 切到后台就停。today.sec 由这段计时器每秒写入，所以「今日剩」是活的。
+let dayBaseMs = 0, dayRunAt = 0;          // 已累计的毫秒 + 本段计时起点（0 = 停着）
 function daySpentMs() { return dayBaseMs + (dayRunAt ? Date.now() - dayRunAt : 0); }
 function dayPause() {
   if (!dayRunAt) return;
   dayBaseMs = daySpentMs();
   dayRunAt = 0;
 }
-function dayLeftSec() {
-  ensureToday();
-  return Math.max(0, S.min * 60 + S.bonus - daySpentMs() / 1000);
-}
+function dayLeftSec() { return Math.max(0, S.min * 60 + S.bonus - daySpentMs() / 1000); }
+// 进入做题页时，把基准对齐到档案里已存的 today.sec
+function dayBind() { dayBaseMs = prof().today.sec * 1000; dayRunAt = 0; }
 function startDayTimer() {
-  stopDayTimer();
-  if (S.mode !== "time") return;
-  $("dayline").classList.remove("hide");
-  if (!dayRunAt) dayRunAt = Date.now();    // 接着上次停的地方走，不重置基准
+  if (dayTimer) { clearInterval(dayTimer); dayTimer = null; }
+  dayPause();                              // 上一段先折进 base，再从这儿接着走
+  const timed = S.mode === "time";
+  $("dayline").classList.toggle("hide", !timed);
+  if (!dayRunAt) dayRunAt = Date.now();
   const tick = () => {
+    const p0 = prof();
+    if (p0.today.d !== todayStr()) { dayBaseMs = 0; dayRunAt = Date.now(); }  // 跨零点重来
+    ensureToday();
+    const p = prof(), spent = Math.round(daySpentMs() / 1000);
+    if (spent > p.today.sec) {              // 每秒把时长写进档案，顺手刷新地图用的 hist
+      p.today.sec = spent;
+      const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
+      h.sec = spent;
+      if (!(spent % 10)) save();
+    }
+    if (!timed) return;
     const left = dayLeftSec();
     const total = S.min * 60 + S.bonus;
     const s = Math.max(0, Math.floor(left % 60));
@@ -524,8 +528,6 @@ function stopDayTimer() {
   dayPause();
   $("dayline").classList.add("hide");
 }
-// 每开一道题：基准对齐到已结算的 today.sec（这题的时间还没算进去）
-function daySyncBase() { dayBaseMs = prof().today.sec * 1000; dayRunAt = 0; }
 
 /* ---------- 棋盘 ---------- */
 const NB = 19, DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
@@ -702,7 +704,6 @@ function onTap(e) {
 function tiSolved() {
   answered = true;
   stopCd();
-  dayPause();
   $("skipBtn").classList.add("hide");
   const p = prof(), L = slotState();
   p.stat.ok++;
@@ -710,7 +711,6 @@ function tiSolved() {
   p.today.n++;
   const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
   h.n = p.today.n;
-  addSec((Date.now() - tiStart) / 1000);
   L.done++;
   L.guanDone++;
   L.bestRound = Math.max(L.bestRound, L.round);
@@ -726,7 +726,6 @@ function tiFailed(reason, r, c) {
   if (answered) return;
   answered = true;
   stopCd();
-  dayPause();
   $("skipBtn").classList.add("hide");
   const p = prof(), L = slotState();
   L.wrong++;
@@ -738,7 +737,6 @@ function tiFailed(reason, r, c) {
   p.today.n++;
   const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
   h.n = p.today.n;
-  addSec((Date.now() - tiStart) / 1000);
   // 错题集
   const item = {
     lv: S.sel, idx: Math.min(L.done - 1, bankLen() - 1), no: cur.no || 0,
@@ -871,7 +869,7 @@ function enterTi() {
   save();
   tiStart = Date.now();
   startCd(left);
-  if (S.mode === "time") { daySyncBase(); startDayTimer(); }
+  startDayTimer();                         // 确保计时在跑（不重置基准）
 }
 // 错满 2 题本关已经判死，给一个"重开本关"的显式出口
 function syncRestart() {
@@ -943,7 +941,7 @@ function startPractice() {
   peekAns = false;                 // 先不给答案码，凭记忆走
   placed = []; step = 0; answered = false; wrongMarks = [];
   firstMove = true;
-  stopCd(); stopDayTimer();
+  stopCd();                        // 只停每题倒计时；今日时长照走（这也是做题页）
   $("clock").className = "done";
   $("clock").textContent = "练习";        // 跟走不计时，别留一个像还在倒计时的秒数
   alive = [practiceLine];
@@ -1046,14 +1044,14 @@ function practiceWrong(it) {
   peekAns = true;                  // 错题集练习本来就是"跟着编号走"
   placed = []; step = 0; answered = false; wrongMarks = [];
   firstMove = true;
-  stopCd(); stopDayTimer();
+  stopCd();
   alive = [practiceLine];
   $("home").classList.add("hide");
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
   $("result").classList.add("hide");
   $("fb").classList.remove("hide");
-  $("dayline").classList.add("hide");
+  dayBind(); startDayTimer();        // 错题练习也在做题页，时间照算
   $("phead").textContent = "错题练习 · 第 " + (it.no || "?") + " 号";
   $("goal").textContent = cur.t || "黑先";
   $("pno").textContent = it.no || "—";
@@ -1088,6 +1086,8 @@ function enterPlay() {
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
   timeUp = false;
+  dayBind();                 // 这一段从档案里已存的时长接着算
+  startDayTimer();
   enterTi();
 }
 function goHome() {
@@ -1496,7 +1496,7 @@ $("resetAll").onclick = () => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") { pauseCd(); stopDayTimer(); }
-  else if (!$("play").classList.contains("hide")) { resumeCd(); if (S.mode === "time") startDayTimer(); }
+  else if (!$("play").classList.contains("hide")) { resumeCd(); startDayTimer(); }
 });
 
 /* ---------- 启动 ---------- */
