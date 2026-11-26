@@ -754,7 +754,16 @@ function tiFailed(reason, r, c) {
      : why + "可以点「答案」看正解，或「下题」。", "no");
   syncRestart();
   $("ansBtn").classList.remove("hide");
-  showNext("下题 →", afterTi);
+  // 满 10 题就结算（哪怕错满 2 题）；还差题而本关已判死，就不再给「下题」——
+  // 继续做只是白耗每日额度，连点还容易误触上面的「跳过本题」，错题数越堆越多。
+  if (L.guanDone >= N_TI) {
+    $("restartGuan").classList.add("hide");     // 直接去结算，别给两条路
+    showNext("本关结算 →", afterTi);
+  } else if (L.wrong >= 2) {
+    $("nextBtn").classList.add("hide");
+  } else {
+    showNext("下题 →", afterTi);
+  }
 }
 
 function afterTi() {
@@ -862,7 +871,7 @@ function enterTi() {
   syncRestart();
   fb(L.wrong === 0 ? "限时 " + S.limit + " 秒，走出正解第一手。"
      : (L.wrong === 1 ? "本关已错 1 题，再错就过不了。"
-        : "本关已错 " + L.wrong + " 题，过不了了。点「重新开始本关」重来，或把剩下 " + (N_TI - L.guanDone) + " 题做完。"), "");
+        : "本关已错 " + L.wrong + " 题，过不了了。点「重新开始本关」重来。"), "");
   draw();
   const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
   L.left = 0;
@@ -1130,6 +1139,7 @@ $("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
 $("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {
   if (answered) return;
+  if (Date.now() - tiStart < 700) return;   // 刚翻到这一题，挡掉连点/布局上移带来的误触
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
   tiFailed("skip");
 };
