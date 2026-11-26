@@ -750,17 +750,16 @@ function tiFailed(reason, r, c) {
   const why = reason === "skip" ? "这题跳过了（记 1 错）。"
     : (reason === "timeout" ? "时间到，这题算错。" : "怎么会失败呢！");
   fb(L.wrong >= 2
-     ? "本关已错 " + L.wrong + " 题，过不了了。点「答案」看正解，或点「重新开始本关」重来。"
+     ? "本关已错 " + L.wrong + " 题，过不了了。做完剩下 " + (N_TI - L.guanDone) + " 题再一起结算，也可以直接「重新开始本关」。"
      : why + "可以点「答案」看正解，或「下题」。", "no");
   syncRestart();
   $("ansBtn").classList.remove("hide");
-  // 满 10 题就结算（哪怕错满 2 题）；还差题而本关已判死，就不再给「下题」——
-  // 继续做只是白耗每日额度，连点还容易误触上面的「跳过本题」，错题数越堆越多。
+  // 原盘规矩：错几题都不中止，一律把 10 题走完，第 10 题做完再弹结算。
   if (L.guanDone >= N_TI) {
-    $("restartGuan").classList.add("hide");     // 直接去结算，别给两条路
-    showNext("本关结算 →", afterTi);
-  } else if (L.wrong >= 2) {
     $("nextBtn").classList.add("hide");
+    $("restartGuan").classList.add("hide");
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(afterTi, 900);     // 让最后一手的反馈露一下，再自动结算
   } else {
     showNext("下题 →", afterTi);
   }
@@ -834,15 +833,15 @@ function guanFailed() {
   L.active = true;
   L.left = 0;
   save();
-  $("rTitle").textContent = "本关不通过";
-  $("rReason").textContent = "错 " + wrong + " 题";
-  $("rLine").textContent = "第 " + L.round + " 轮 · 第 " + no + " 关 · 对 " + correct + " 题 错 " + wrong + " 题";
-  $("rSub").textContent = "只被允许错 1 题 · 本档案最佳 第 " + L.bestRound + " 轮";
   $("fb").classList.add("hide");
   $("nextBtn").classList.add("hide");
   $("ansBtn").classList.add("hide");
   $("restartGuan").classList.add("hide");
-  $("result").classList.remove("hide");
+  $("skipBtn").classList.add("hide");
+  // 和原盘一样：10 题走完直接弹「本关不通过」，点一下就回本关第 1 题
+  setMask("本关不通过",
+          "第 " + no + " 关 · 对 " + correct + " 题 错 " + wrong + " 题。只允许错 1 题，从第 1 题再来一次。",
+          "重新开始本关", () => { hideMask(); enterTi(); });
   $("pwrong").textContent = wrong;
   $("pcount").textContent = correct;
 }
@@ -858,7 +857,6 @@ function enterTi() {
   practice = false; practiceLine = null;
   alive = cur.qa && cur.qa.length ? cur.qa.slice() : [cur.q || []];
   hideMask();
-  $("result").classList.add("hide");
   $("fb").classList.remove("hide");
   hideAnswer();
   clearTimeout(autoTimer);
@@ -1058,7 +1056,6 @@ function practiceWrong(it) {
   $("home").classList.add("hide");
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
-  $("result").classList.add("hide");
   $("fb").classList.remove("hide");
   dayBind(); startDayTimer();        // 错题练习也在做题页，时间照算
   $("phead").textContent = "错题练习 · 第 " + (it.no || "?") + " 号";
@@ -1106,7 +1103,6 @@ function goHome() {
   practice = false;
   hideMask();
   hideAnswer();
-  $("result").classList.add("hide");
   $("fb").classList.remove("hide");
   $("dayline").classList.add("hide");
   $("play").classList.add("hide");
@@ -1124,15 +1120,6 @@ $("newRun").onclick = () => {
   startRun();
   enterPlay();
 };
-$("again").onclick = () => {
-  const L = slotState();
-  L.wrong = 0; L.active = true; L.left = 0;
-  save();
-  $("result").classList.add("hide");
-  $("fb").classList.remove("hide");
-  enterPlay();
-};
-$("toHome").onclick = goHome;
 $("quit").onclick = goHome;
 $("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
 
@@ -1153,7 +1140,6 @@ $("restartGuan").onclick = () => {
   L.left = 0;
   L.active = true;
   save();
-  $("result").classList.add("hide");
   $("ansRow").classList.add("hide");
   enterTi();
 };
@@ -1531,7 +1517,7 @@ if (DEV) {
     },
     geo: () => ({ cell, ox, oy, c0: $("svg")._c0, r0: $("svg")._r0 }),
     status: () => ({ answered, firstMove, step, placed: placed.length,
-                     fb: $("fb").textContent, result: !$("result").classList.contains("hide"),
+                     fb: $("fb").textContent,
                      clock: $("clock").textContent, next: !$("nextBtn").classList.contains("hide") }),
     setCd: ms => { cdEnd = Date.now() + ms; cdLeft = ms; },
     cd: () => Math.round(Math.max(0, cdEnd - Date.now()) / 1000),
