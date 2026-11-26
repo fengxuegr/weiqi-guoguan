@@ -3,7 +3,7 @@
  * 版本号由 build.py 写入，版本一变就换新缓存并清掉旧缓存。
  * 只在 https 或 localhost 下生效；局域网 http://192.168.x.x 不会注册，属预期。
  */
-const V = "a921a5c0860d";
+const V = "00f8948cd3cc";
 const PREFIX = "gshj-";
 const CACHE = PREFIX + V;
 const ASSETS = [
@@ -51,6 +51,8 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  // version.txt / sw.js 不能被缓存，否则「检查更新」永远读到旧版本号
+  if (/\/version\.txt$|\/sw\.js$/.test(url.pathname)) return;
 
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => {
