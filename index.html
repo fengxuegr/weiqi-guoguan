@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="build" content="00f8948cd3cc">
+<meta name="build" content="30fa11ad7746">
 <title>围棋死活大师 · 过关斩将</title>
 <link rel="stylesheet" href="style.css">
 <!--PWA-HEAD-->
@@ -201,7 +201,7 @@
     </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.9</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.10</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -375,7 +375,9 @@
     checkBuild(function (fresh) {
       if (fresh === null) { back(navigator.onLine ? "无法检查" : "网络不通"); return; }
       if (fresh) { snoozeUntil = 0; showUpdate(reg); back("发现新版本"); return; }
-      back("已是最新");
+      // 顺手把当前版本报出来，免得"已是最新"看着像没反应
+      var cur = ((document.querySelector(".ver") || {}).textContent || "").replace("版本 ", "").trim();
+      back(cur ? "已是最新 " + cur : "已是最新");
     });
   };
 })();
