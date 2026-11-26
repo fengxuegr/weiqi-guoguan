@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="build" content="30fa11ad7746">
+<meta name="build" content="cf6d29b3586efb1b50a70869feb2de1ca3994fd6">
 <title>围棋死活大师 · 过关斩将</title>
 <link rel="stylesheet" href="style.css">
 <!--PWA-HEAD-->
@@ -38,7 +38,7 @@
   <section class="card">
     <div class="nowtop">
       <div class="nowmain">
-        <div class="nowrank" id="nowRank">花一 · 级位入门</div>
+        <div class="nowrank" id="nowRank">级位</div>
         <div class="nowjie">第 <b id="nowRound">1</b> 轮 · 第 <b id="nowJie">1</b> 关 · 第 <b id="nowTi">1</b> / 10 题</div>
       </div>
       <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
@@ -94,15 +94,15 @@
         <button type="button" data-v="12w">近 12 周</button>
       </span>
     </div>
-    <div class="row"><span>连续做题</span><span id="streak">连续 0 天</span></div>
-    <div class="calhead"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="row" id="streakRow"><span>连续做题</span><span id="streak">连续 0 天</span></div>
+    <div class="calhead" id="calHead"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
     <div class="cal" id="cal"></div>
     <div class="legend">
       <span>未做</span><i class="lv0"></i><span>1–10</span><i class="lv1"></i><span>11–20</span><i class="lv2"></i>
-      <span>21–30</span><i class="lv3"></i><span>31–50</span><i class="lv4"></i><span>50+</span><i class="lv5"></i>
+      <span>21–30</span><i class="lv3"></i><span>31–50</span><i class="lv4"></i><span>51+</span><i class="lv5"></i>
     </div>
     <div class="hint" id="calHint">本月每天做了多少题</div>
-    <div class="row" style="margin-top:6px"><span>本月累计</span><span id="calSum">—</span></div>
+    <div class="row" style="margin-top:6px"><span id="calSumLabel">本月累计</span><span id="calSum">—</span></div>
   </section>
 
   <section class="card">
@@ -122,7 +122,7 @@
   </section>
 
   <details class="fold card">
-    <summary>错题集（<span id="wrongN">0</span>）</summary>
+    <summary>错题集（<span id="wrongN">0</span>）<span id="wrongMore" class="wrong-more"></span></summary>
     <div class="foldbody">
       <div id="wrongList" class="wrongList"><div class="emptyLine">还没有错题</div></div>
       <div class="hint">点一条可以跟着编号走一遍（不计分）。</div>
@@ -217,7 +217,7 @@
 <div id="play" class="hide">
   <div class="top">
     <button id="quit" class="btn ghost small">返回</button>
-    <span id="phead">花一 · 第 1 关 · 第 1 / 10 题</span>
+    <span id="phead">级位 · 第 1 轮 · 第 1 关 · 第 1 / 10 题</span>
     <span id="clock">60″</span>
   </div>
   <div class="dayline hide" id="dayline"><span id="dayLeft"></span><span id="dayTotal"></span></div>
@@ -242,8 +242,8 @@
   </div>
   <div class="pinfo">
     <span>本关 对 <b id="pcount">0</b> · 错 <b id="pwrong">0</b></span>
-    <span>段内第 <b id="pno">1</b> 号</span>
-    <span>最佳 <b id="pbest">0</b> 关</span>
+    <span>题库第 <b id="pno">1</b> 号</span>
+    <span>最佳第 <b id="pbest">0</b> 轮</span>
   </div>
 </div>
 

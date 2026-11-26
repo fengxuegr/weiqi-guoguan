@@ -253,7 +253,6 @@ function renderToday() {
   $("modeSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.m === S.mode));
   $("rowMin").classList.toggle("hide", S.mode !== "time");
   $("numMin").value = S.min;
-  $("modeSeg").parentElement.parentElement.querySelectorAll("[data-min]").forEach(() => {});
   document.querySelectorAll("#rowMin [data-min]").forEach(b => b.classList.toggle("on", +b.dataset.min === S.min));
   const quota = S.min * 60 + S.bonus;
   $("todayHint").textContent = S.mode === "free"
@@ -269,7 +268,14 @@ function renderCal12() {
   cal.innerHTML = "";
   cal.classList.add("rolling");
   const end = new Date();
-  for (let i = 83; i >= 0; i--) {
+  // 让最后一格（今天）落在正确的星期列：前面补 0..6 个空格
+  const lead = (end.getDay() + 6) % 7;
+  for (let i = 0; i < lead; i++) {
+    const blank = document.createElement("div");
+    blank.className = "cell empty";
+    cal.appendChild(blank);
+  }
+  for (let i = 83 - lead; i >= 0; i--) {
     const d = new Date(end);
     d.setDate(d.getDate() - i);
     const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -290,12 +296,19 @@ function renderCal12() {
     if (n > 0) { sum += n; active++; }
   }
   $("calSum").textContent = "近 12 周 " + sum + " 题 · " + active + " 天有做题";
-  $("calHint").textContent = "最近 12 周每天做了多少题（每格一天）";
+  $("calSumLabel").textContent = "近 12 周累计";
+  $("calHint").textContent = "最近 12 周每天做了多少题（每格一天，从周一到周日）";
+  $("streakRow").classList.add("hide");
+  $("calHead").classList.add("hide");
   $("mapSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === mapView));
 }
 function renderCal() {
   if (mapView === "12w") { renderCal12(); return; }
   $("cal").classList.remove("rolling");
+  $("streakRow").classList.remove("hide");
+  $("calHead").classList.remove("hide");
+  $("calSumLabel").textContent = "本月累计";
+  $("calHint").textContent = "本月每天做了多少题";
   const p = prof();
   ensureToday();
   const now = new Date();
@@ -343,6 +356,7 @@ function renderCal() {
 function renderWrong() {
   const p = prof();
   $("wrongN").textContent = p.wrong.length;
+  $("wrongMore").textContent = p.wrong.length > 8 ? "（共 " + p.wrong.length + " 条，显示最近 8 条）" : "";
   const box = $("wrongList");
   if (!p.wrong.length) {
     box.innerHTML = '<div class="emptyLine">还没有错题</div>';
@@ -405,7 +419,7 @@ function renderHome() {
         : L.wrong === 1 ? "已错 1 题，再错一题就过不了"
         : "已错 " + L.wrong + " 题，本关过不了");
   } else if (started) {
-    $("newHint").textContent = "上次停在第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " 题";
+    $("newHint").textContent = "上次停在第 " + L.round + " 轮 · 第 " + guanShown(L) + " 关 · 第 " + tiNo(L) + " 题";
   } else {
     $("newHint").textContent = prof().name + " · " + lv.nm + "共 " + totalGuan(S.sel) + " 关 · 从第 1 关开始";
   }
@@ -454,7 +468,10 @@ function setMask(title, sub, b1, fn1) {
   $("maskBtn").onclick = fn1;
   $("mask").classList.remove("hide");
 }
-function hideMask() { $("mask").classList.add("hide"); }
+function hideMask() {
+  $("mask").classList.add("hide");
+  var acts = $("maskActs"); if (acts) acts.innerHTML = "";
+}
 
 /* ---------- 每题倒计时 ---------- */
 let cdEnd = 0, cdLeft = 0, cdTimer = null;
@@ -654,28 +671,48 @@ function draw(from) {
 }
 
 /* ---------- 判题 ---------- */
-function branchStep(lines, st, r, c) {
-  const aliveOK = lines.filter(b => { const p = b[st]; return p && p[0] === r && p[1] === c; });
+function branchStep(lines, st, r, c, question) {
+  let aliveOK = lines.filter(b => { const p = b[st]; return p && p[0] === r && p[1] === c; });
   if (!aliveOK.length) return { alive: aliveOK, hit: false, white: null, step: st, done: false };
+  // 一题有多解时，若题目自带一条"首选解" q，走到该线路上的点时优先沿用这条线路，
+  // 避免共享前缀的另一条短解把题目提前判完（如级位 541 题）。
+  const preferred = (question && question.qa && question.qa.length) ? question.q : null;
+  if (preferred && preferred[st] && preferred[st][0] === r && preferred[st][1] === c) {
+    const exact = aliveOK.filter(b => b[st] && b[st][0] === r && b[st][1] === c &&
+      b.length === preferred.length &&
+      b.every((p, i) => p[0] === preferred[i][0] && p[1] === preferred[i][1]));
+    if (exact.length) aliveOK = exact;
+  }
   const line = aliveOK[0];
   let s = st + 1;
   const white = s < line.length ? line[s] : null;
   if (white) s++;
   return { alive: aliveOK, hit: true, white, step: s, done: aliveOK.some(b => s >= b.length) };
 }
-function onTap(e) {
-  if (practice) { onPracticeTap(e); return; }
-  if (answered) return;
+// 把 SVG 视图坐标换算为棋盘交叉点；棋盘外（含木质边框）返回 null，不再 clamp 到边缘
+function tapPoint(e) {
   const el = e.currentTarget, rect = el.getBoundingClientRect(), vb = el.viewBox.baseVal;
   const px = (e.clientX - rect.left) / rect.width * vb.width;
   const py = (e.clientY - rect.top) / rect.height * vb.height;
-  let r = Math.round((py - oy) / cell), c = Math.round((px - ox) / cell);
-  r = clamp(r + el._r0, 0, 18); c = clamp(c + el._c0, 0, 18);
+  const c = Math.round((px - ox) / cell) + el._c0;
+  const r = Math.round((py - oy) / cell) + el._r0;
+  if (r < 0 || r >= NB || c < 0 || c >= NB) return null;
+  if (Math.abs(px - (ox + (c - el._c0) * cell)) > cell * 0.45 ||
+      Math.abs(py - (oy + (r - el._r0) * cell)) > cell * 0.45) return null;
+  return [r, c];
+}
+
+function onTap(e) {
+  if (practice) { onPracticeTap(e); return; }
+  if (answered) return;
+  const pt = tapPoint(e);
+  if (!pt) { fb("请点在棋盘交叉点上（边框不算落子）。", ""); return; }
+  const r = pt[0], c = pt[1];
 
   const bad = illegalReason(r, c);
   if (bad) { fb("此处不可落子：" + bad + "（不算错，换个点）", ""); return; }
 
-  const j = branchStep(alive, step, r, c);
+  const j = branchStep(alive, step, r, c, cur);
   if (j.hit) {
     alive = j.alive;
     const from = placed.length;
@@ -728,6 +765,7 @@ function tiFailed(reason, r, c) {
   stopCd();
   $("skipBtn").classList.add("hide");
   const p = prof(), L = slotState();
+  const failedTi = tiNo(L), failedGuan = guanNo(L);
   L.wrong++;
   L.done++;
   L.guanDone++;
@@ -741,7 +779,7 @@ function tiFailed(reason, r, c) {
   const item = {
     lv: S.sel, idx: Math.min(L.done - 1, bankLen() - 1), no: cur.no || 0,
     reason: reason === "wrong" ? "落子错误" : (reason === "skip" ? "主动跳过" : "超时"),
-    d: todayStr(), round: L.round, guan: guanNo(L), ti: tiNo(L)
+    d: todayStr(), round: L.round, guan: failedGuan, ti: failedTi
   };
   p.wrong = [item].concat(p.wrong.filter(w => !(w.lv === item.lv && w.idx === item.idx))).slice(0, 100);
   save();
@@ -768,8 +806,8 @@ function tiFailed(reason, r, c) {
 function afterTi() {
   hideAnswer();
   const L = slotState();
-  if (L.guanDone >= N_TI) { guanResult(); return; }
   if (timeUp) { showTimeUp(); return; }
+  if (L.guanDone >= N_TI) { guanResult(); return; }
   enterTi();
 }
 function guanResult() {
@@ -813,7 +851,10 @@ function roundPassed(correct, wrong) {
     SFX.done();
     setMask("第 " + doneRound + " 轮完成", "对 " + correct + " 题 · 错 " + wrong + " 题。下一轮 " +
             (doneRound + 1) * ROUND_UNIT + " 题，从第 1 关重新开始。",
-            "开始第 " + L.round + " 轮", () => { hideMask(); enterTi(); });
+            "开始第 " + L.round + " 轮", () => {
+              if (timeUp) { showTimeUp(); return; }
+              hideMask(); enterTi();
+            });
   } else {
     L.done = targetOf(doneRound);
     save();
@@ -841,7 +882,10 @@ function guanFailed() {
   // 和原盘一样：10 题走完直接弹「本关不通过」，点一下就回本关第 1 题
   setMask("本关不通过",
           "第 " + no + " 关 · 对 " + correct + " 题 错 " + wrong + " 题。只允许错 1 题，从第 1 题再来一次。",
-          "重新开始本关", () => { hideMask(); enterTi(); });
+          "重新开始本关", () => {
+            if (timeUp) { showTimeUp(); return; }
+            hideMask(); enterTi();
+          });
   $("pwrong").textContent = wrong;
   $("pcount").textContent = correct;
 }
@@ -863,9 +907,12 @@ function enterTi() {
   $("phead").textContent = LEVELS[S.sel].nm + " · 第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " / " + N_TI + " 题";
   $("goal").textContent = cur.t || "黑先";
   $("pno").textContent = cur.no || "—";
+  $("pbest").textContent = L.bestRound || 0;
   $("pcount").textContent = correctOf(L);
   $("pwrong").textContent = L.wrong;
   $("skipBtn").classList.remove("hide");
+  $("skipBtn").disabled = true;
+  setTimeout(() => { if (!answered && !practice) $("skipBtn").disabled = false; }, 700);
   syncRestart();
   fb(L.wrong === 0 ? "限时 " + S.limit + " 秒，走出正解第一手。"
      : (L.wrong === 1 ? "本关已错 1 题，再错就过不了。"
@@ -993,13 +1040,11 @@ function markGuide() {
 }
 function onPracticeTap(e) {
   if (answered) return;
-  const el = e.currentTarget, rect = el.getBoundingClientRect(), vb = el.viewBox.baseVal;
-  const px = (e.clientX - rect.left) / rect.width * vb.width;
-  const py = (e.clientY - rect.top) / rect.height * vb.height;
-  let r = Math.round((py - oy) / cell), c = Math.round((px - ox) / cell);
-  r = clamp(r + el._r0, 0, 18); c = clamp(c + el._c0, 0, 18);
+  const pt = tapPoint(e);
+  if (!pt) { fb("请点在棋盘交叉点上（边框不算落子）。", ""); return; }
+  const r = pt[0], c = pt[1];
   if (playBoard().board[r][c] !== 0) { fb("这里已经有子，换个点。", ""); return; }
-  const j = branchStep(alive, step, r, c);
+  const j = branchStep(alive, step, r, c, cur);
   if (!j.hit) { fb(peekAns ? "这手不对，照编号走。" : "这手不对。记不住就点「看答案」偷看一眼。", "no"); return; }
   placed.push([r, c, 1]);
   SFX.stone();
@@ -1038,7 +1083,20 @@ function showTimeUp() {
             hideMask();
             enterTi();
           });
-  // 第二个按钮：返回首页（复用 mask 下方？用 confirm 简化）
+  var acts = $("maskActs");
+  if (!acts) {
+    acts = document.createElement("div");
+    acts.id = "maskActs";
+    acts.className = "racts";
+    $("mask").appendChild(acts);
+  }
+  acts.innerHTML = "";
+  var quitBtn = document.createElement("button");
+  quitBtn.type = "button";
+  quitBtn.className = "btn quiet";
+  quitBtn.textContent = "今天不做了，回首页";
+  quitBtn.onclick = () => { acts.innerHTML = ""; goHome(); };
+  acts.appendChild(quitBtn);
 }
 
 /* ---------- 错题练习 ---------- */
@@ -1061,6 +1119,7 @@ function practiceWrong(it) {
   $("phead").textContent = "错题练习 · 第 " + (it.no || "?") + " 号";
   $("goal").textContent = cur.t || "黑先";
   $("pno").textContent = it.no || "—";
+  $("pbest").textContent = prof().lv[S.sel].bestRound || 0;
   $("pcount").textContent = 0;
   $("pwrong").textContent = 0;
   $("clock").className = "done";
@@ -1083,7 +1142,6 @@ function startRun() {
   prof().lv[S.sel].bestRound = best;
   prof().lv[S.sel].plays = plays + 1;
   prof().stat.runs++;
-  timeUp = false;
   save();
 }
 function enterPlay() {
@@ -1091,9 +1149,9 @@ function enterPlay() {
   $("home").classList.add("hide");
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
-  timeUp = false;
   dayBind();                 // 这一段从档案里已存的时长接着算
   startDayTimer();
+  if (timeUp) { showTimeUp(); return; }  // 时间到不能被回首页/结算弹窗绕过
   enterTi();
 }
 function goHome() {
@@ -1116,7 +1174,7 @@ $("resume").onclick = () => {
 };
 $("newRun").onclick = () => {
   const L = slotState();
-  if (L.active && !confirm("从第 1 轮第 1 关重新开始？\n\n本关进度会清空；最佳轮次保留。")) return;
+  if (L.active && !confirm("从第 1 轮第 1 关重新开始？\n\n本难度全部进度会清空；最佳轮次保留。")) return;
   startRun();
   enterPlay();
 };
@@ -1126,7 +1184,7 @@ $("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
 $("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {
   if (answered) return;
-  if (Date.now() - tiStart < 700) return;   // 刚翻到这一题，挡掉连点/布局上移带来的误触
+  if ($("skipBtn").disabled || Date.now() - tiStart < 700) return;   // 刚翻到这一题，挡掉连点/布局上移带来的误触
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
   tiFailed("skip");
 };
@@ -1313,13 +1371,17 @@ async function encodeCode(str) {
   }
   let s = "";
   for (let i = 0; i < out.length; i++) s += String.fromCharCode(out[i]);
-  return "GS6" + tag + ":" + btoa(s);
+  // 进度码要放进 URL / 二维码，统一使用 base64url（不含 + / =）
+  const b64 = btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return "GS6" + tag + ":" + b64;
 }
 async function decodeCode(code) {
   code = String(code || "").trim().replace(/\s+/g, "");
   const m = /^GS6([GP]):(.+)$/.exec(code);
   if (!m) throw new Error("格式不对，是不是没复制全？");
-  const bin = atob(m[2]);
+  let body = m[2].replace(/-/g, "+").replace(/_/g, "/");
+  while (body.length % 4) body += "=";
+  const bin = atob(body);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   if (m[1] === "G") {
@@ -1347,9 +1409,10 @@ function showQr(code) {
   }
 }
 function pickCode(text) {
-  const m = /#p=(GS6[GP]:[A-Za-z0-9\-_]+)/.exec(text || "");
+  // 兼容旧版 base64（+ / =）和新的 base64url（- _），也兼容 #p= 链接格式
+  const m = /#p=(GS6[GP]:[A-Za-z0-9\-_+/=]+)/.exec(text || "");
   const raw = m ? m[1] : String(text || "").trim();
-  const mm = /^(GS6[GP]:)([A-Za-z0-9\-_]+)$/.exec(raw);
+  const mm = /^(GS6[GP]:)([A-Za-z0-9\-_+/=]+)$/.exec(raw);
   if (!mm) return null;
   let body = mm[2].replace(/-/g, "+").replace(/_/g, "/");
   while (body.length % 4) body += "=";
