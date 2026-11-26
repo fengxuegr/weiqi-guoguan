@@ -200,7 +200,7 @@
     </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.7</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.8</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -334,28 +334,55 @@
     hideBar();
   };
 
+  // 「检查更新」：sw.js 是安装即接管（skipWaiting），永远不会停在 waiting，
+  // 所以只靠 reg.waiting 判断永远是"已是最新"。这里改成：先探网，有网就清缓存 + 硬刷新。
   if (btn) btn.onclick = function () {
-    if (!reg) { btn.textContent = "暂不可用"; setTimeout(function () { btn.textContent = "检查更新"; }, 2000); return; }
     if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = "检查中…";
-    reg.update().then(function () {
+    var back = function (t) {
+      btn.disabled = false;
+      btn.textContent = t;
+      setTimeout(function () { btn.textContent = "检查更新"; }, 2400);
+    };
+    var reloadFresh = function () {
+      if (!navigator.onLine) { back("网络不通"); return; }   // 断网时绝不动离线缓存
+      btn.textContent = "正在更新…";
+      // 用没被 SW 缓存过的地址探一下网络，免得断网时把离线缓存清掉。
+      // 注意：断网时 SW 会兜底返回 503，fetch 不会 reject，必须自己判状态码。
+      fetch("__ping?ts=" + Date.now(), { cache: "no-store" })
+        .then(function (r) {
+          if (!r || r.status === 503 || r.status >= 500) throw new Error("offline");
+          return caches.keys();
+        })
+        .then(function (keys) {
+          return Promise.all(keys.filter(function (k) { return k.indexOf("gshj-") === 0; })
+            .map(function (k) { return caches.delete(k); }));
+        })
+        .then(function () {
+          return navigator.serviceWorker.getRegistration();
+        })
+        .then(function (r) { return r ? r.unregister() : null; })
+        .then(function () {
+          // 带参数刷新，绕过浏览器自己的 HTTP 缓存
+          location.replace(location.pathname + "?u=" + Date.now());
+        })
+        .catch(function () { back(navigator.onLine ? "更新失败，稍后再试" : "网络不通"); });
+    };
+    // update() 在 iOS 上偶尔一直不 resolve，用超时兜底，别让按钮永远停在"检查中…"
+    var up = (reg && reg.update) ? reg.update() : Promise.resolve();
+    var cap = new Promise(function (r) { setTimeout(r, 2500); });
+    Promise.race([up, cap]).then(function () {
       setTimeout(function () {
-        btn.disabled = false;
-        if (reg.waiting && navigator.serviceWorker.controller) {
+        if (reg && reg.waiting && navigator.serviceWorker.controller) {
           snoozeUntil = 0;
           showUpdate(reg);
-          btn.textContent = "发现新版本";
+          back("发现新版本");
         } else {
-          btn.textContent = "已是最新";
+          reloadFresh();          // 没有等待中的版本，就直接清缓存重拉
         }
-        setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
-      }, 1500);
-    }).catch(function () {
-      btn.disabled = false;
-      btn.textContent = "网络不通";
-      setTimeout(function () { btn.textContent = "检查更新"; }, 2200);
-    });
+      }, 900);
+    }).catch(function () { reloadFresh(); });
   };
 })();
 </script>
