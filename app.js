@@ -1017,7 +1017,7 @@ function tiSolved() {
   renderProgress("playDots", pendingResult ? N_TI : L.guanDone);
   fb("解题成功！本关已对 " + okN + " 题。", "ok");
   if (S.auto) { clearTimeout(autoTimer); autoTimer = setTimeout(afterTi, 800); }
-  else showNext("下一题", afterTi);
+  else showNext(pendingResult ? "看本关结果" : "下一题", afterTi);
 }
 function tiFailed(reason, r, c) {
   if (answered) return;
@@ -1063,12 +1063,13 @@ function tiFailed(reason, r, c) {
     : guanEnd ? " 本关已做完。" : " 可以先看看正解。"), "no");
   syncRestart();
   $("ansBtn").classList.remove("hide");
-  // 原盘规矩：错几题都不中止，一律把 10 题走完，第 10 题做完再弹结算。
+  // 原盘规矩：错几题都不中止，一律把 10 题走完，第 10 题做完再结算。
+  // 但不能自动弹走：第 10 题做错时还想看看正解，定时器一响就来不及了。
+  // 改成给一个「看本关结果」按钮，看完正解自己点。
   if (guanEnd) {
-    $("nextBtn").classList.add("hide");
     $("restartGuan").classList.add("hide");
-    clearTimeout(autoTimer);
-    autoTimer = setTimeout(afterTi, 900);     // 让最后一手的反馈露一下，再自动结算
+    clearTimeout(autoTimer); autoTimer = null;
+    showNext("看本关结果", afterTi);
   } else {
     showNext("下一题", afterTi);
   }
@@ -1202,9 +1203,6 @@ function markLine(idx) {
      "红圈标出第一手，数字标出手顺。", "");
 }
 function showAnswerRow() {
-  // 第 10 题挂着 900ms 的自动结算定时器；先看答案就先把它取消，
-  // 否则答案刚显示就被 afterTi() 连带结算弹窗一起冲掉。
-  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
   const row = $("ansRow");
   const lines = aliveLines();
   row.innerHTML = "";
@@ -1225,13 +1223,6 @@ function showAnswerRow() {
   wb.type = "button"; wb.className = "btn walk"; wb.id = "walkBtn"; wb.textContent = "自己再走一次";
   wb.onclick = () => startPractice();
   row.appendChild(wb);
-  // 第 10 题看完答案后要给一条继续结算的路；定时器已取消，不能干等着。
-  if (pendingResult) {
-    const cb = document.createElement("button");
-    cb.type = "button"; cb.className = "btn"; cb.id = "answerDoneBtn"; cb.textContent = "看好了，继续";
-    cb.onclick = () => { clearTimeout(autoTimer); autoTimer = null; afterTi(); };
-    row.appendChild(cb);
-  }
   row.classList.remove("hide");
   $("ansBtn").classList.add("hide");
   markLine(0);
@@ -1249,7 +1240,7 @@ function startPractice() {
   $("clock").className = "done";
   $("clock").textContent = "练习 · 不计时";        // 跟走不计时，别留一个像还在倒计时的秒数
   alive = [practiceLine];
-  showNext("下一题", afterTi);
+  showNext(pendingResult ? "看本关结果" : "下一题", afterTi);
   $("restartGuan").classList.add("hide");
   $("ansBtn").textContent = "看答案";
   $("ansBtn").classList.remove("hide");  // 记不住可以临时调出来
