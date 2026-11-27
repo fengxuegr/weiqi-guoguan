@@ -397,16 +397,18 @@ function renderLevels() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "lvcard" + (S.sel === i ? " sel" : "");
+    b.setAttribute("aria-pressed", String(S.sel === i));
+    b.title = lvSub(L, i) + " · 共 " + totalGuan(i) + " 关";
     b.style.setProperty("--c", lv.c);
     b.style.setProperty("--cd", lv.cd);
     b.style.setProperty("--bg", lv.bg);
     b.innerHTML = (lv.icon === "flower" ? flowerSVG() : leafSVG()) +
-      `<b>${lv.nm}</b><span class="p">${lvSub(L, i)}</span>` +
-      `<span class="m">共 ${totalGuan(i)} 关</span>`;
+      `<b>${lv.nm}</b><span class="lv-check" aria-hidden="true">✓</span>`;
     b.onclick = () => {
       if (S.sel === i) return;
       S.sel = i;
       save(); renderHome();
+      box.children[i]?.focus?.({ preventScroll: true });
     };
     box.appendChild(b);
   });
@@ -415,6 +417,8 @@ const totalGuan = i => Math.ceil(DATA[i].p.length / N_TI);
 
 function renderWho() {
   $("whoName").textContent = prof().name;
+  $("whoBtn").setAttribute("aria-label", "练习档案：" + prof().name);
+  $("whoBtn").setAttribute("aria-expanded", String(!$("whoPanel").classList.contains("hide")));
   const panel = $("whoPanel");
   panel.innerHTML = "";
   S.profiles.forEach((p, i) => {
@@ -587,14 +591,26 @@ function renderWrong() {
   }
   box.innerHTML = "";
   p.wrong.slice(0, 8).forEach(it => {
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "wrow";
     const lv = LEVELS[it.lv] ? LEVELS[it.lv].nm : "";
     row.innerHTML = `<span class="wn">${lv} · 第${it.round}轮 第${it.guan}关</span>` +
-      `<span class="wr">第 ${it.ti} 题 · ${it.reason}</span><span class="wd">${it.d || ""}</span>`;
+      `<span class="wr">第 ${it.ti} 题 · ${it.reason}</span><span class="wrong-date">${it.d || ""}</span>`;
     row.onclick = () => practiceWrong(it);
     box.appendChild(row);
   });
+}
+
+// 只标已完成和当前题。存档没有逐题的对错顺序，成绩单独显示。
+function renderProgress(id, done, current = false) {
+  const dots = $(id);
+  dots.innerHTML = "";
+  for (let i = 0; i < N_TI; i++) {
+    const d = document.createElement("i");
+    d.className = i < done ? "done" : i === done && current ? "cur" : "";
+    dots.appendChild(d);
+  }
 }
 
 function renderHome() {
@@ -609,48 +625,30 @@ function renderHome() {
   $("nowRound").textContent = L.round;
   $("nowJie").textContent = dGuan;
   $("nowTi").textContent = dTi;
-  $("ringtxt").textContent = dDone + "/10";
-  const C = 2 * Math.PI * 42;
-  $("ringfg").style.strokeDasharray = (dDone / 10 * C) + " " + C;
+  $("ringtxt").textContent = dDone + " / " + N_TI;
+  renderProgress("dots", dDone);
 
-  // 圆环＝本关（10 题）进度；进度条＝本轮（100/200/300 题）进度
   const target = targetOf(L.round);
-  const pct = Math.min(1, L.done / target);
-  const dots = $("dots");
-  dots.innerHTML = "";
-  const filled = Math.round(pct * 10);
-  for (let i = 0; i < 10; i++) {
-    const d = document.createElement("i");
-    if (i < filled) d.className = "done";
-    dots.appendChild(d);
-  }
   $("roundLine").textContent = "本轮 " + L.done + " / " + target + " 题" +
     (L.done >= target ? " · 已完成" : "");
 
   const started = L.active || L.done > 0 || L.plays > 0;
   $("resume").classList.toggle("hide", cleared);
-  $("resume").textContent = started
-    ? "继续闯关（第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " 题）"
-    : "开始闯关";
+  $("resume").textContent = started ? "继续闯关" : "开始闯关";
+  $("challengeLabel").textContent = cleared ? "全部通关" : started ? "上次练到" : "准备闯关";
   $("newRun").classList.toggle("hide", !cleared);
-  $("newRun").classList.toggle("ghost", !cleared);
-  if (cleared) {
-    $("newHint").textContent = lv.nm + " " + totalGuan(S.sel) + " 关全部走完了 · 点上面「重刷」从第 1 轮再来";
-  } else if (L.active) {
-    $("newHint").textContent = "本关已对 " + correctOf(L) + " 题 · " +
-      (L.wrong === 0 ? "还能错 1 题"
-        : L.wrong === 1 ? "已错 1 题，再错一题就过不了"
-        : "已错 " + L.wrong + " 题，本关过不了");
-  } else if (started) {
-    $("newHint").textContent = "上次停在第 " + L.round + " 轮 · 第 " + guanShown(L) + " 关 · 第 " + tiNo(L) + " 题";
-  } else {
-    $("newHint").textContent = prof().name + " · " + lv.nm + "共 " + totalGuan(S.sel) + " 关 · 从第 1 关开始";
-  }
+  const status = cleared ? lv.nm + " " + totalGuan(S.sel) + " 关全部完成。重刷将从第 1 轮开始。"
+    : L.active && L.wrong === 1 ? "已错 1 题，再错 1 题，本关不通过。"
+    : L.active && L.wrong >= 2 ? "本关已错 " + L.wrong + " 题，不能通过。" : "";
+  $("newHint").textContent = status;
+  $("newHint").classList.toggle("hide", !status);
 
   $("limitSeg").querySelectorAll("button").forEach(b => {
-    b.classList.toggle("on", +b.dataset.s === S.limit);
+    const selected = +b.dataset.s === S.limit;
+    b.classList.toggle("on", selected);
+    b.setAttribute("aria-pressed", String(selected));
   });
-  $("limitHint").textContent = "只限每题第一步：第一手走对后就不再计时（当前 " + S.limit + " 秒）";
+  $("limitSummary").textContent = "首手 " + S.limit + " 秒";
 
   const st = prof().stat;
   $("stOk").textContent = st.guans;
@@ -676,6 +674,7 @@ let wrongMarks = [];
 let cell = 30, ox = 0, oy = 0;
 let autoTimer = null;
 let practice = false, practiceLine = null, ansIdx = 0, peekAns = false;
+let wrongReview = null;   // 错题集重做独立于闯关后的跟走练习
 let mapView = "month";
 let tiStart = 0, dayTimer = null;
 
@@ -707,7 +706,7 @@ function tickCd() {
   const left = Math.max(0, cdEnd - Date.now());
   cdLeft = left;
   const el = $("clock");
-  el.textContent = Math.max(0, Math.ceil(left / 1000)) + "″";
+  el.textContent = "首手 " + Math.max(0, Math.ceil(left / 1000)) + " 秒";
   el.classList.toggle("warn", left <= 10000);
   if (left <= 0) { stopCd(); tiFailed("timeout"); }
 }
@@ -887,7 +886,10 @@ function draw(from) {
   const W = (w - 1) * cell + PAD * 2, H = (h - 1) * cell + PAD * 2;
   ox = PAD; oy = PAD;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  let g = `<rect width="${W}" height="${H}" fill="#e8c879" rx="6"/>`;
+  $("boardFrame").style.setProperty("--board-ratio", W / H);
+  let g = `<defs><linearGradient id="boardWood" x2=".93" y2="1">
+             <stop stop-color="#edca8b"/><stop offset="1" stop-color="#dfb173"/>
+           </linearGradient></defs><rect width="${W}" height="${H}" fill="url(#boardWood)" rx="6"/>`;
   for (let i = 0; i < w; i++)
     g += `<line x1="${PAD + i * cell}" y1="${PAD}" x2="${PAD + i * cell}" y2="${PAD + (h - 1) * cell}" stroke="#7a5a2a" stroke-width="1"/>`;
   for (let j = 0; j < h; j++)
@@ -980,7 +982,7 @@ function onTap(e) {
       stopCd();
       const el2 = $("clock");
       el2.className = "done";
-      el2.textContent = "✓";
+      el2.textContent = "首手已通过";
     }
     const caps = draw(from);
     if (caps) SFX.capture();
@@ -1011,9 +1013,11 @@ function tiSolved() {
   save();
   SFX.ok();
   draw();
-  fb("哈哈成功啦！本关已对 " + okN + " 题", "ok");
+  $("pcount").textContent = okN;
+  renderProgress("playDots", pendingResult ? N_TI : L.guanDone);
+  fb("解题成功！本关已对 " + okN + " 题。", "ok");
   if (S.auto) { clearTimeout(autoTimer); autoTimer = setTimeout(afterTi, 800); }
-  else showNext("下题 →", afterTi);
+  else showNext("下一题", afterTi);
 }
 function tiFailed(reason, r, c) {
   if (answered) return;
@@ -1049,11 +1053,14 @@ function tiFailed(reason, r, c) {
   save();
   $("pwrong").textContent = wrongN;
   $("pcount").textContent = okN;
-  const why = reason === "skip" ? "这题跳过了（记 1 错）。"
-    : (reason === "timeout" ? "时间到，这题算错。" : "怎么会失败呢！");
-  fb(wrongN >= 2
-     ? "本关已错 " + wrongN + " 题，过不了了。做完剩下 " + restN + " 题再一起结算，也可以直接「重新开始本关」。"
-     : why + "可以点「答案」看正解，或「下题」。", "no");
+  renderProgress("playDots", guanEnd ? N_TI : L.guanDone);
+  $("clock").className = "stopped";
+  $("clock").textContent = reason === "timeout" ? "首手超时" : "计时已停";
+  const why = reason === "skip" ? "已跳过，记 1 错。"
+    : reason === "timeout" ? "首手时间到，记 1 错。" : "这手没走对。";
+  fb(why + (wrongN >= 2 && restN > 0
+    ? " 本关不能通过，可做完剩下 " + restN + " 题，或重新开始。"
+    : guanEnd ? " 本关已做完。" : " 可以先看看正解。"), "no");
   syncRestart();
   $("ansBtn").classList.remove("hide");
   // 原盘规矩：错几题都不中止，一律把 10 题走完，第 10 题做完再弹结算。
@@ -1063,7 +1070,7 @@ function tiFailed(reason, r, c) {
     clearTimeout(autoTimer);
     autoTimer = setTimeout(afterTi, 900);     // 让最后一手的反馈露一下，再自动结算
   } else {
-    showNext("下题 →", afterTi);
+    showNext("下一题", afterTi);
   }
 }
 
@@ -1125,6 +1132,9 @@ function enterTi() {
   hideAnswer();
   clearTimeout(autoTimer);
   $("phead").textContent = LEVELS[S.sel].nm + " · 第 " + L.round + " 轮 · 第 " + guanNo(L) + " 关 · 第 " + tiNo(L) + " / " + N_TI + " 题";
+  $("playScore").classList.remove("hide");
+  $("playDots").classList.remove("hide");
+  renderProgress("playDots", L.guanDone, true);
   $("goal").textContent = cur.t || "黑先";
   $("pno").textContent = cur.no || "—";
   $("pbest").textContent = L.bestRound || 0;
@@ -1134,9 +1144,9 @@ function enterTi() {
   $("skipBtn").disabled = true;
   setTimeout(() => { if (!answered && !practice) $("skipBtn").disabled = false; }, 700);
   syncRestart();
-  fb(L.wrong === 0 ? "限时 " + S.limit + " 秒，走出正解第一手。"
-     : (L.wrong === 1 ? "本关已错 1 题，再错就过不了。"
-        : "本关已错 " + L.wrong + " 题，过不了了。点「重新开始本关」重来。"), "");
+  fb(L.wrong === 0 ? "请在棋盘交叉点落子。第一手走对后不再计时。"
+     : (L.wrong === 1 ? "本关已错 1 题，再错 1 题，本关不通过。"
+        : "本关不能通过，可做完剩余题目或重新开始。"), "");
   draw();
   const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
   L.left = 0;
@@ -1183,23 +1193,33 @@ function markLine(idx) {
     }
   }
   marks.innerHTML = html;
-  $("ansRow").querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", i === idx));
+  $("ansRow").querySelectorAll(".answer-choice").forEach((b, i) => {
+    b.classList.toggle("on", i === idx);
+    b.setAttribute("aria-pressed", String(i === idx));
+  });
   const total = lines.length;
-  fb("现在明白了吧！答案 " + (idx + 1) + " / " + total + "：红圈是第一手，数字是手顺。" +
-     (total > 1 ? "点下面的「答案" + (idx === 0 ? 2 : 1) + "」可以换一条线路。" : ""), "");
+  fb((total > 1 ? "正解 " + (idx + 1) + " / " + total + "：" : "看正解：") +
+     "红圈标出第一手，数字标出手顺。", "");
 }
 function showAnswerRow() {
   const row = $("ansRow");
   const lines = aliveLines();
   row.innerHTML = "";
-  lines.forEach((_, i) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "chip"; b.textContent = "答案" + (i + 1);
-    b.onclick = () => markLine(i);
-    row.appendChild(b);
-  });
+  if (lines.length > 1) {
+    const choices = document.createElement("div");
+    choices.className = "answer-choices";
+    choices.setAttribute("role", "group");
+    choices.setAttribute("aria-label", "切换正解");
+    lines.forEach((_, i) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip answer-choice"; b.textContent = "正解 " + (i + 1);
+      b.onclick = () => markLine(i);
+      choices.appendChild(b);
+    });
+    row.appendChild(choices);
+  }
   const wb = document.createElement("button");
-  wb.type = "button"; wb.className = "chip walk"; wb.id = "walkBtn"; wb.textContent = "不看答案走一遍";
+  wb.type = "button"; wb.className = "btn walk"; wb.id = "walkBtn"; wb.textContent = "自己再走一次";
   wb.onclick = () => startPractice();
   row.appendChild(wb);
   row.classList.remove("hide");
@@ -1217,9 +1237,9 @@ function startPractice() {
   firstMove = true;
   stopCd();                        // 只停每题倒计时；今日时长照走（这也是做题页）
   $("clock").className = "done";
-  $("clock").textContent = "练习";        // 跟走不计时，别留一个像还在倒计时的秒数
+  $("clock").textContent = "练习 · 不计时";        // 跟走不计时，别留一个像还在倒计时的秒数
   alive = [practiceLine];
-  showNext("下题 →", afterTi);
+  showNext("下一题", afterTi);
   $("restartGuan").classList.add("hide");
   $("ansBtn").textContent = "看答案";
   $("ansBtn").classList.remove("hide");  // 记不住可以临时调出来
@@ -1234,9 +1254,16 @@ function practiceTip() {
 function toggleGuide() {
   peekAns = !peekAns;
   draw();
-  if (peekAns) markGuide();
+  if (peekAns) {
+    if (wrongReview) {
+      wrongReview.independent = false;
+      practiceLine = aliveLines()[0]?.line || [];
+      $("reviewRetry").classList.remove("hide");
+    }
+    markGuide();
+  }
   $("ansBtn").textContent = peekAns ? "收起答案" : "看答案";
-  fb(practiceTip(), "");
+  fb(wrongReview ? wrongReviewTip() : practiceTip(), "");
 }
 function markGuide() {
   const svg = $("svg"), marks = $("marks");
@@ -1263,20 +1290,40 @@ function onPracticeTap(e) {
   const pt = tapPoint(e);
   if (!pt) { fb("请点在棋盘交叉点上（边框不算落子）。", ""); return; }
   const r = pt[0], c = pt[1];
-  if (playBoard().board[r][c] !== 0) { fb("这里已经有子，换个点。", ""); return; }
+  const bad = wrongReview ? illegalReason(r, c) : (playBoard().board[r][c] !== 0 ? "已经有子" : null);
+  if (bad) { fb("此处不可落子：" + bad + "（不算错，换个点）", ""); return; }
   const j = branchStep(alive, step, r, c, cur);
-  if (!j.hit) { fb(peekAns ? "这手不对，照编号走。" : "这手不对。记不住就点「看答案」偷看一眼。", "no"); return; }
+  if (!j.hit) {
+    if (wrongReview) {
+      wrongReview.independent = false;
+      $("reviewRetry").classList.remove("hide");
+      fb("这手不对，本次会保留错题。可以继续学，或点「重新挑战」。", "no");
+    } else fb(peekAns ? "这手不对，照编号走。" : "这手不对。记不住就点「看答案」偷看一眼。", "no");
+    return;
+  }
+  alive = j.alive;
   placed.push([r, c, 1]);
   SFX.stone();
   if (j.white) { placed.push([j.white[0], j.white[1], 2]); setTimeout(() => SFX.white(), 130); }
   step = j.step;
   draw();
-  if (j.done) { answered = true; fb("整条走完了！这题算你会了。", "ok"); $("nextBtn").classList.remove("hide"); }
-  else { if (peekAns) markGuide(); fb("对，继续。", "ok"); }
+  if (j.done) {
+    answered = true;
+    if (wrongReview) finishWrongReview();
+    else { fb("整条走完了！这题算你会了。", "ok"); $("nextBtn").classList.remove("hide"); }
+  } else {
+    if (peekAns) {
+      if (wrongReview) practiceLine = aliveLines()[0]?.line || [];
+      markGuide();
+    }
+    fb("对，继续。", "ok");
+  }
 }
 function hideAnswer() {
+  wrongReview = null;
+  $("reviewRetry").classList.add("hide");
   $("ansBtn").classList.add("hide");
-  $("ansBtn").textContent = "答案";
+  $("ansBtn").textContent = "看正解";
   $("nextBtn").classList.add("hide");
   $("skipBtn").classList.add("hide");
   practice = false;
@@ -1320,37 +1367,64 @@ function showTimeUp() {
 }
 
 /* ---------- 错题练习 ---------- */
+function wrongReviewTip() {
+  if (peekAns) return "可以跟着编号走。本次会保留错题；学完可点「重新挑战」。";
+  if (!wrongReview.independent) return "本次会保留错题，点「重新挑战」可以从头独立再做。";
+  return "不看答案、整题一次走对，就会移出错题集。不计分、不限时。";
+}
+function finishWrongReview() {
+  $("ansBtn").classList.add("hide");
+  if (!wrongReview.independent) {
+    fb("整条走完了！这题仍在错题集，可以再独立挑战一次。", "ok");
+    return;
+  }
+  const { item, profileId } = wrongReview;
+  const p = S.profiles.find(profile => profile.id === profileId);
+  if (p && p.wrong.includes(item)) {
+    p.wrong = p.wrong.filter(w => w !== item);
+    save();
+  }
+  $("reviewRetry").classList.add("hide");
+  fb("已掌握，已移出错题集！", "ok");
+}
 function practiceWrong(it) {
-  const b = DATA[it.lv] && DATA[it.lv].p;
-  if (!b || !b[it.idx]) return;
-  cur = b[it.idx];
-  practiceLine = (cur.qa && cur.qa.length) ? (cur.q && cur.q.length ? cur.q : cur.qa[0]) : (cur.q || []);   // 和判题一样优先首选解 q
+  const q = DATA[it.lv]?.p[it.idx];
+  if (!q) return;
+  const retrying = wrongReview?.item === it;
+  hideAnswer();
+  cur = q;
+  practiceLine = null;
   practice = true;
-  peekAns = true;                  // 错题集练习本来就是"跟着编号走"
+  wrongReview = { item: it, profileId: prof().id, independent: true };
   placed = []; step = 0; answered = false; wrongMarks = [];
   firstMove = true;
   stopCd();
-  alive = [practiceLine];
+  alive = cur.qa?.length ? cur.qa.slice() : [cur.q || []];
   $("home").classList.add("hide");
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
+  $("whoBtn").setAttribute("aria-expanded", "false");
+  window.scrollTo?.(0, 0);
   $("fb").classList.remove("hide");
-  dayBind(); startDayTimer();        // 错题练习也在做题页，时间照算
-  $("phead").textContent = "错题练习 · 第 " + (it.no || "?") + " 号";
+  if (!retrying) { dayBind(); startDayTimer(); }   // 重新挑战不重置当天累计时长
+  $("phead").textContent = "错题练习 · " + LEVELS[it.lv].nm + "第 " + (cur.no || "?") + " 号";
+  $("playScore").classList.add("hide");
+  $("playDots").classList.add("hide");
   $("goal").textContent = cur.t || "黑先";
-  $("pno").textContent = it.no || "—";
-  $("pbest").textContent = (prof().lv[it.lv] || prof().lv[S.sel]).bestRound || 0;   // 错题属于哪个难度就显示哪个
+  $("pno").textContent = cur.no || "—";
+  $("pbest").textContent = prof().lv[it.lv].bestRound || 0;
   $("pcount").textContent = 0;
   $("pwrong").textContent = 0;
   $("clock").className = "done";
-  $("clock").textContent = "练习";
-  $("skipBtn").classList.add("hide");
+  $("clock").textContent = "练习 · 不计时";
   $("restartGuan").classList.add("hide");
-  $("ansBtn").classList.add("hide");
+  $("ansBtn").textContent = "看答案";
+  $("ansBtn").classList.remove("hide");
+  $("reviewRetry").onclick = () => practiceWrong(it);
   hideMask();
-  draw(); markGuide();
-  fb("跟着编号走一遍，不计分。", "");
-  showNext("返回首页", () => goHome());
+  draw();
+  fb(wrongReviewTip(), "");
+  showNext("返回首页", goHome);
 }
 
 /* ---------- 开始 / 继续 ---------- */
@@ -1369,6 +1443,8 @@ function enterPlay() {
   $("home").classList.add("hide");
   $("play").classList.remove("hide");
   $("whoPanel").classList.add("hide");
+  $("whoBtn").setAttribute("aria-expanded", "false");
+  window.scrollTo?.(0, 0);
   dayBind();                 // 这一段从档案里已存的时长接着算
   startDayTimer();
   if (isTimeUp()) { showTimeUp(); return; }  // 时间到不能被回首页/结算弹窗绕过
@@ -1408,7 +1484,10 @@ $("newRun").onclick = () => {
   enterPlay();
 };
 $("quit").onclick = goHome;
-$("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
+$("whoBtn").onclick = () => {
+  const closed = $("whoPanel").classList.toggle("hide");
+  $("whoBtn").setAttribute("aria-expanded", String(!closed));
+};
 
 $("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {

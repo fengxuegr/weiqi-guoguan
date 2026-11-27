@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="build" content="v1.0.13">
+<meta name="build" content="v1.0.14">
 <title>围棋死活大师 · 过关斩将</title>
 <link rel="stylesheet" href="style.css">
 <!--PWA-HEAD-->
@@ -22,71 +22,54 @@
 <div class="wrap">
 
 <div id="home">
-  <h1>围棋死活大师 · 过关斩将</h1>
-  <div class="sub">1500 道题 · 级位 90 关 · 段位 60 关 · 每关 10 题</div>
-
-  <div class="who">
-    <span class="wholab">练习档案</span>
-    <button id="whoBtn" class="whobtn"><b id="whoName">—</b><i>▾</i></button>
-  </div>
+  <header class="home-head">
+    <div class="home-brand">
+      <svg class="board-mark" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#eedcc0"/><path d="M7 13.5h20m-20 7h20m-13.5-14v21m7-21v21" fill="none" stroke="#a67649"/><circle cx="13.5" cy="13.5" r="4" fill="#29261e"/><circle cx="20.5" cy="20.5" r="4" fill="#fffcf3" stroke="#b09a7b" stroke-width=".5"/></svg>
+      <h1>围棋闯关</h1>
+    </div>
+    <button type="button" id="whoBtn" class="whobtn" aria-label="练习档案" aria-expanded="false" aria-controls="whoPanel"><b id="whoName">—</b><i aria-hidden="true">▾</i></button>
+  </header>
   <div class="whoPanel hide" id="whoPanel"></div>
 
-  <section class="card">
+  <section class="difficulty" aria-labelledby="difficultyLabel">
+    <h2 id="difficultyLabel">练习难度</h2>
     <div class="levels" id="levels"></div>
   </section>
 
-  <section class="card">
-    <div class="nowtop">
-      <div class="nowmain">
-        <div class="nowrank" id="nowRank">级位</div>
-        <div class="nowjie">第 <b id="nowRound">1</b> 轮 · 第 <b id="nowJie">1</b> 关 · 第 <b id="nowTi">1</b> / 10 题</div>
-      </div>
-      <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
-        <circle cx="50" cy="50" r="42" class="ringbg"/>
-        <circle id="ringfg" cx="50" cy="50" r="42" class="ringfg"/>
-        <text id="ringtxt" x="50" y="55" class="rt1">0/10</text>
-      </svg>
-    </div>
-    <div class="dots" id="dots"></div>
-    <div class="roundline" id="roundLine">本轮 0 / 100 题</div>
-
-    <div class="row"><span>每题限时</span>
-      <span class="seg" id="limitSeg">
+  <section class="card challenge" aria-label="闯关进度">
+    <div class="challenge-kicker" id="challengeLabel">准备闯关</div>
+    <h2 class="nowjie" id="challengePosition">第 <b id="nowJie">1</b> 关 · 第 <b id="nowTi">1</b> 题</h2>
+    <div class="challenge-meta"><span id="nowRank">级位</span> · 第 <span id="nowRound">1</span> 轮</div>
+    <div class="challenge-progress"><span>本关已做</span><b id="ringtxt">0 / 10</b></div>
+    <div class="dots" id="dots" aria-hidden="true"></div>
+    <button class="btn primary-arrow" id="resume">开始闯关</button>
+    <button class="btn primary-arrow hide" id="newRun">重刷本难度</button>
+    <div class="hint hide" id="newHint"></div>
+    <details id="limitDetails" class="limit-details">
+      <summary><span>仅第一手计时</span><b id="limitSummary">首手 60 秒</b></summary>
+      <div class="seg" id="limitSeg" role="group" aria-label="每题第一手的限时">
         <button type="button" data-s="15">15 秒</button>
         <button type="button" data-s="30">30 秒</button>
         <button type="button" data-s="60">60 秒</button>
-      </span>
-    </div>
-    <div class="hint" id="limitHint">15/30/60 秒只限<b>每题第一步</b>：第一手走对后就不再计时，后面走完为止。</div>
-
-    <button class="btn" id="resume">开始闯关</button>
-    <button class="btn ghost hide" id="newRun">重刷本难度（从第 1 轮第 1 关重新开始）</button>
-    <div class="hint" id="newHint"></div>
+      </div>
+    </details>
   </section>
 
-  <section class="card">
-    <h2>今天</h2>
-    <div class="today">
-      <div><b id="tdN">0</b><span>题</span></div>
-      <div><b id="tdMin">0</b><span>分钟</span></div>
-      <div><b id="tdFirst">—</b><span>首答正确率</span></div>
+  <details class="fold card wrong-card" id="wrongDetails">
+    <summary><span>复习错题</span><b class="fold-meta"><span id="wrongN">0</span> 道</b></summary>
+    <div class="foldbody">
+      <div id="wrongList" class="wrongList"><div class="emptyLine">还没有错题</div></div>
+      <div class="hint" id="wrongMore"></div>
+      <div class="hint">点一条不限时重做。不看答案、整题一次走对，就会移出错题集。</div>
     </div>
-    <div class="row"><span>每日节奏</span>
-      <span class="seg" id="modeSeg">
-        <button type="button" data-m="free">自由</button>
-        <button type="button" data-m="time">固定时间</button>
-      </span>
-    </div>
-    <div class="row hide" id="rowMin"><span>每天时长</span>
-      <span class="inline"><input id="numMin" type="number" min="5" max="60" step="5" value="10">
-        <button class="chip" data-min="10">10</button>
-        <button class="chip" data-min="15">15</button>
-        <button class="chip" data-min="20">20</button></span>
-    </div>
-    <div class="hint" id="todayHint">自由模式：想做多久做多久</div>
-  </section>
+  </details>
 
-  <section class="card">
+  <details class="fold card records" id="recordDetails">
+    <summary><span>今天的练习<small><b id="tdN">0</b> 题 · <b id="tdMin">0</b> 分钟</small></span><b class="fold-meta">练习记录</b></summary>
+    <div class="foldbody">
+    <div class="row"><span>今日首答正确率</span><b id="tdFirst">—</b></div>
+    <div class="roundline" id="roundLine">本轮 0 / 100 题</div>
+    <section class="record-block">
     <h2>活跃地图</h2>
     <div class="row"><span>看多久</span>
       <span class="seg" id="mapSeg">
@@ -105,7 +88,7 @@
     <div class="row" style="margin-top:6px"><span id="calSumLabel">本月累计</span><span id="calSum">—</span></div>
   </section>
 
-  <section class="card">
+  <section class="record-block">
     <h2>我的战绩</h2>
     <div class="statgrid">
       <div class="stat"><b id="stOk">0</b><span>累计过关</span></div>
@@ -113,35 +96,46 @@
       <div class="stat"><b id="stPass">0</b><span>闯关次数</span></div>
       <div class="stat"><b id="stTime">0</b><span>超时次数</span></div>
     </div>
+    </section>
+    </div>
+  </details>
+
+  <details class="fold card settings" id="settingsDetails">
+    <summary>练习设置</summary>
+    <div class="foldbody">
+    <div class="row"><span>每日节奏</span>
+      <span class="seg" id="modeSeg">
+        <button type="button" data-m="free">自由</button>
+        <button type="button" data-m="time">固定时间</button>
+      </span>
+    </div>
+    <div class="row hide" id="rowMin"><label for="numMin">每天时长</label>
+      <span class="inline"><input id="numMin" type="number" min="5" max="60" step="1" value="10">
+        <button class="chip" data-min="10">10</button>
+        <button class="chip" data-min="15">15</button>
+        <button class="chip" data-min="20">20</button></span>
+    </div>
+    <div class="hint" id="todayHint">自由模式：想做多久做多久</div>
     <div class="row" style="margin-top:10px">
       <span>音效</span>
       <span class="inline"><button class="chip on" id="sfxBtn">开</button>
         <input id="sfxVol" type="range" min="0" max="100" step="5" value="45" title="音量"></span>
     </div>
     <div class="row"><span>答对后自动翻题</span><button class="chip on" id="autoBtn">开</button></div>
-  </section>
 
   <details class="fold card">
-    <summary>错题集（<span id="wrongN">0</span>）<span id="wrongMore" class="wrong-more"></span></summary>
-    <div class="foldbody">
-      <div id="wrongList" class="wrongList"><div class="emptyLine">还没有错题</div></div>
-      <div class="hint">点一条可以跟着编号走一遍（不计分）。</div>
-    </div>
-  </details>
-
-  <details class="fold card">
-    <summary>怎么玩（第一次先看这里）</summary>
+    <summary>怎么玩</summary>
     <div class="foldbody">
       <ol class="how">
         <li><b>先选时间</b>15 / 30 / 60 秒，只限<b>每一题的第一步</b>：必须在秒数内走出正解第一手，之后电脑自动应对，直到整题走完。</li>
         <li><b>再选难度</b>只有两个入口：<b>级位</b>（90 关）和<b>段位</b>（60 关）。点一下选中，再点「开始闯关」。</li>
         <li><b>孩子档案</b>顶部「练习档案」可以给每个孩子建一个档案，级位/段位的进度各存各的，互不影响。</li>
         <li><b>每关 10 题，允许错 1 题</b>错题不会当场结束，把 10 题做完再一起算总账：错 2 题以上本关不通过，第 10 题做完会直接弹窗，点一下从本关第 1 题重来。超时也算错一题；下在非法点（已经有子 / 不入气 / 打劫）只提示，不算错。</li>
-        <li><b>答错一题</b>可以点「答案」看正解（现在明白了吧！），整条手顺会用 1、2、3… 标出来，第一手带红圈。一题有多条正解时，下面会出现「答案1 / 答案2 / 答案3…」，点哪个就显示哪条。看完点<b>「不看答案走一遍」</b>可以凭记忆把这条走一遍（不计分、不算错，想不起来就点「看答案」临时调出来）。</li>
+        <li><b>答错一题</b>可以点「看正解」。红圈标出第一手，数字标出手顺；有多条正解时可以切换。看完点<b>「自己再走一次」</b>，凭记忆重走，不计分、不算错。</li>
         <li><b>答不出</b>也可以直接点棋盘下方的「跳过本题」，会记一次错（每关只允许错 1 题）。</li>
         <li><b>轮次</b>第 1 轮 100 题（10 关），第 2 轮 200 题（20 关），第 3 轮 300 题……每轮都从第 1 关重来，越往后做得越多。级位 9 轮（900 题）、段位 6 轮（600 题）。</li>
         <li><b>今天</b>「每日节奏」可选自由或固定时间；固定时间做完当天额度会提醒休息，也可以「再来 5 分钟」。</li>
-        <li><b>活跃地图 / 错题集</b>下面能看到本月每天做了多少题、连续几天；做错的题会进错题集，点一条可以跟着编号走一遍。</li>
+        <li><b>活跃地图 / 错题集</b>下面能看到本月每天做了多少题、连续几天；做错的题会进错题集。重做时不看答案、整题一次走对即可移出；看过答案或走错后，可点「重新挑战」。复习不影响闯关成绩。</li>
       </ol>
       <div class="howbox">
         <div class="howt">轮次怎么加</div>
@@ -157,12 +151,11 @@
         <li>主屏幕图标和 Safari 的进度是分开存的：在 Safari 里练过再加到主屏幕，要先用「备份 · 换设备」把进度码搬过去。</li>
         <li>iPad / iPhone 用 Safari 打开 → 分享 → 添加到主屏幕，以后全屏打开、断网也能做。</li>
       </ul>
-      <button class="btn quiet" id="resetAll">清空全部档案和进度</button>
     </div>
   </details>
 
   <details class="fold card">
-    <summary>手动设置进度</summary>
+    <summary>高级 · 手动设置进度</summary>
     <div class="foldbody">
       <div class="row"><label for="mSetLv">难度</label><span><select id="mSetLv">
         <option value="0">级位</option><option value="1">段位</option></select></span></div>
@@ -171,6 +164,7 @@
       <div class="row"><label for="mSetTi">本关第几题</label><span><input id="mSetTi" type="number" min="1" max="10" step="1" value="1"></span></div>
       <button class="btn ghost" id="mSetApply">应用（覆盖该难度的进度）</button>
       <div class="hint" id="mSetHint">第 1 轮共 100 题（10 关）</div>
+      <button class="btn quiet danger-action" id="resetAll">清空全部档案和进度</button>
     </div>
   </details>
 
@@ -203,8 +197,10 @@
       <div class="hint" id="codeHint">导入默认覆盖本机当前档案（名字、进度、今日统计、错题、地图）；勾选「导入为新档案」则另建一个孩子。</div>
     </div>
   </details>
+  </div>
+  </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.13</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.14</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -217,38 +213,46 @@
   </div>
 </div>
 
-<div id="play" class="hide">
-  <div class="top">
-    <button id="quit" class="btn ghost small">返回</button>
-    <span id="phead">级位 · 第 1 轮 · 第 1 关 · 第 1 / 10 题</span>
-    <span id="clock">60″</span>
-  </div>
-  <div class="dayline hide" id="dayline"><span id="dayLeft"></span><span id="dayTotal"></span></div>
-  <div class="goal" id="goal">死活题：黑先净杀</div>
-  <div class="wd">
-    <svg id="svg" viewBox="0 0 400 400"></svg>
-    <div class="mask hide" id="mask">
-      <b id="maskTitle">过关</b>
-      <span id="maskSub"></span>
-      <button class="btn" id="maskBtn">继续</button>
+<main id="play" class="hide" aria-label="围棋做题">
+  <header class="play-head">
+    <button type="button" id="quit" class="btn ghost small">〈 返回</button>
+    <span class="play-brand">围棋闯关</span>
+    <div class="dayline hide" id="dayline"><span id="dayLeft"></span><span id="dayTotal"></span></div>
+  </header>
+  <div class="play-layout">
+    <section class="play-question" aria-label="当前题目">
+      <div class="play-position" id="phead">级位 · 第 1 轮 · 第 1 关 · 第 1 / 10 题</div>
+      <div class="play-dots" id="playDots" aria-hidden="true"></div>
+      <div class="goal-line"><h2 class="goal" id="goal">死活题：黑先净杀</h2><span id="clock">首手 60 秒</span></div>
+    </section>
+    <div class="wd" id="boardFrame">
+      <svg id="svg" viewBox="0 0 400 400" aria-label="围棋棋盘"></svg>
+      <div class="mask hide" id="mask">
+        <b id="maskTitle">过关</b>
+        <span id="maskSub"></span>
+        <button class="btn" id="maskBtn">继续</button>
+      </div>
     </div>
+    <section class="play-actions" aria-label="答题反馈与操作">
+      <div class="fb" id="fb" role="status" aria-live="polite">请在交叉点落子</div>
+      <div class="ansRow hide" id="ansRow"></div>
+      <div class="acts">
+        <button class="btn hide" id="ansBtn">看正解</button>
+        <button class="btn ghost hide" id="reviewRetry">重新挑战</button>
+        <button class="btn ghost hide" id="nextBtn">下一题</button>
+      </div>
+      <div class="play-extras">
+        <button class="btn quiet" id="skipBtn">跳过本题（记 1 错）</button>
+        <button class="btn quiet danger-action hide" id="restartGuan">重新开始本关</button>
+      </div>
+      <div class="pinfo">
+        <span id="playScore">本关 对 <b id="pcount">0</b> · 错 <b id="pwrong">0</b></span>
+        <span>题库第 <b id="pno">1</b> 号</span>
+        <span>最佳第 <b id="pbest">0</b> 轮</span>
+      </div>
+    </section>
   </div>
-  <div class="fb" id="fb">点黑子落子</div>
-  <div class="ansRow hide" id="ansRow"></div>
-
-  <button class="btn ghost hide" id="restartGuan">重新开始本关（本关成绩清零）</button>
-  <button class="btn quiet" id="skipBtn">跳过本题（记一次错）</button>
-
-  <div class="acts">
-    <button class="btn ghost hide" id="ansBtn">答案</button>
-    <button class="btn ghost hide" id="nextBtn">下题 →</button>
-  </div>
-  <div class="pinfo">
-    <span>本关 对 <b id="pcount">0</b> · 错 <b id="pwrong">0</b></span>
-    <span>题库第 <b id="pno">1</b> 号</span>
-    <span>最佳第 <b id="pbest">0</b> 轮</span>
-  </div>
-</div>
+</main>
 
 </div>
 
