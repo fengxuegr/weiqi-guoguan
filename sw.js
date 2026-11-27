@@ -3,7 +3,7 @@
  * 版本号由 build.py 写入，版本一变就换新缓存并清掉旧缓存。
  * 只在 https 或 localhost 下生效；局域网 http://192.168.x.x 不会注册，属预期。
  */
-const V = "v1.0.11";
+const V = "v1.0.13";
 const PREFIX = "gshj-";
 const CACHE = PREFIX + V;
 const ASSETS = [
@@ -23,12 +23,13 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  // 迁移版：旧页面还没有「更新提示条」，必须先接管，否则会一直卡在旧缓存。
-  // 进入稳定版后可以改回「等待 + 提示条」。
+  // 只缓存，不接管：装好后进入等待，页面弹「有新版本」，用户点了才发 SKIP_WAITING。
+  // 用户点「稍后」也没关系，应用彻底关掉再打开时浏览器会自动换成新版本。
+  // cache: "reload" 绕过浏览器 HTTP 缓存（GitHub Pages 默认缓存 10 分钟），
+  // 免得刚发布时新版本号下缓存的还是旧文件。
   e.waitUntil(
     caches.open(CACHE)
-      .then((c) => c.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+      .then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" }))))
   );
 });
 

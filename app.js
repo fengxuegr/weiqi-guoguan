@@ -20,18 +20,71 @@ const LEVELS = [
 
 /* ---------- 存档 ---------- */
 function blankLv() { return { round: 1, done: 0, guanDone: 0, wrong: 0, plays: 0, active: false, left: 0, bestRound: 0 }; }
-function blankDay() { return { d: "", n: 0, sec: 0, fo: 0, fa: 0 }; }
-function blankStat() { return { guans: 0, runs: 0, timeout: 0, wrong: 0, ok: 0 }; }
+function blankDay() { return { d: "", n: 0, sec: 0, fo: 0, fa: 0, bonus: 0 }; }   // bonus：当天「再来 5 分钟」加的秒数，换日自然清零
+function blankStat() { return { guans: 0, runs: 0, timeout: 0, skip: 0, wrong: 0, ok: 0 }; }
 let SEQ = 1;
 function newProfile(name) {
   return { id: SEQ++, name: name || "孩子 1", lv: [blankLv(), blankLv()], today: blankDay(), hist: {}, wrong: [], stat: blankStat() };
 }
+function createProfile(name) {
+  const p = newProfile(name);
+  do { p.id = Math.floor(Math.random() * 2147483646) + 2; }
+  while (S.profiles.some(other => other.id === p.id));
+  return p;
+}
 function fresh() {
   SEQ = 1;
   return {
-    v: 7, cur: 0, sel: 0, limit: 60, mode: "time", min: 10, bonus: 0,
+    v: 7, cur: 0, sel: 0, limit: 60, mode: "time", min: 10,
     profiles: [newProfile("孩子 1")], sfx: { on: true, vol: 0.45 }, auto: false
   };
+}
+const bankLenOf = gi => DATA[gi].p.length;
+const maxRoundOfLen = len => Math.max(1, Math.ceil(len / ROUND_UNIT));
+/* 一关 10 题做完后的结算：纯状态更新，和弹窗分开。
+   第 10 题一落子就立刻结算并存档，这样结算前退出 / 刷新 / 被系统杀掉都不会留下 guanDone=10 的半截状态。 */
+function settleGuan(L, gi, st) {
+  const len = bankLenOf(gi);
+  const no = Math.ceil(L.done / N_TI);
+  const wrong = L.wrong, correct = N_TI - wrong;
+  L.guanDone = 0; L.wrong = 0; L.left = 0;
+  if (wrong >= 2) {
+    L.done = Math.max(0, L.done - N_TI);
+    L.active = true;
+    return { kind: "fail", no, correct, wrong };
+  }
+  if (st) st.guans++;
+  L.bestRound = Math.max(L.bestRound, L.round);
+  const target = Math.min(L.round * ROUND_UNIT, len);
+  if (L.done < target) return { kind: "pass", no, correct, wrong };
+  const doneRound = L.round;
+  if (doneRound < maxRoundOfLen(len)) {
+    L.round++;
+    L.done = 0;
+    return { kind: "round", no, correct, wrong, doneRound };
+  }
+  L.done = target;
+  return { kind: "all", no, correct, wrong, doneRound };
+}
+/* 修老存档：旧版在「第 10 题做完、还没点结算」时退出，会留下 guanDone=10，
+   重载时被 %10 变成 0、错题数却留着，或者 done 不再对齐到关的边界。 */
+function repairLv(L, gi, st) {
+  const len = bankLenOf(gi);
+  L.round = Math.min(L.round, maxRoundOfLen(len));
+  L.done = Math.min(L.done, Math.min(L.round * ROUND_UNIT, len));
+  L.guanDone = Math.min(L.guanDone, L.done);
+  if ((L.done - L.guanDone) % N_TI !== 0) {          // 关边界错位：本关从第 1 题重来
+    L.done = Math.floor(L.done / N_TI) * N_TI;
+    L.guanDone = 0; L.wrong = 0;
+    return L;
+  }
+  const target = Math.min(L.round * ROUND_UNIT, len);
+  const unsettled = L.guanDone === 0 && L.done >= N_TI &&
+    (L.wrong > 0 || (L.done >= target && L.round < maxRoundOfLen(len)));
+  if (unsettled) L.guanDone = N_TI;
+  L.wrong = Math.min(L.wrong, L.guanDone);
+  if (L.guanDone >= N_TI) settleGuan(L, gi, st);
+  return L;
 }
 function normLv(L) {
   const x = L || {};
@@ -43,12 +96,12 @@ function normLv(L) {
   return {
     round: Math.max(1, round || 1),
     done: Math.max(0, done),
-    guanDone: Math.max(0, Math.min(N_TI, (x.guanDone != null ? x.guanDone : ((x.guan || 0) * N_TI + (x.ti || 0))) % N_TI)),
+    guanDone: Math.max(0, Math.min(N_TI, x.guanDone != null ? x.guanDone | 0 : ((x.guan | 0) * N_TI + (x.ti | 0)) % N_TI)),
     wrong: Math.max(0, Math.min(N_TI, x.wrong | 0)),
     plays: Math.max(0, x.plays | 0),
     active: !!x.active,
     left: Math.max(0, x.left | 0),
-    bestRound: Math.max(0, (x.bestRound | 0) || round || 1)
+    bestRound: Math.max(0, x.bestRound == null ? round : x.bestRound | 0)
   };
 }
 function normalize(o) {
@@ -60,7 +113,7 @@ function normalize(o) {
     pr.stat = Object.assign(blankStat(), p.stat);
     return {
       v: 7, cur: 0, sel: 0, limit: [15, 30, 60].includes(o.limit) ? o.limit : 60,
-      mode: "time", min: 10, bonus: 0, profiles: [pr],
+      mode: "time", min: 10, profiles: [pr],
       sfx: Object.assign({ on: true, vol: 0.45 }, o.sfx), auto: o.auto === true
     };
   }
@@ -71,7 +124,7 @@ function normalize(o) {
     pr.stat = Object.assign(blankStat(), o.stat);
     return {
       v: 7, cur: 0, sel: 0, limit: [15, 30, 60].includes(o.limit) ? o.limit : 60,
-      mode: "time", min: 10, bonus: 0, profiles: [pr],
+      mode: "time", min: 10, profiles: [pr],
       sfx: Object.assign({ on: true, vol: 0.45 }, o.sfx), auto: o.auto === true
     };
   }
@@ -81,7 +134,6 @@ function normalize(o) {
     limit: [15, 30, 60].includes(o.limit) ? o.limit : 60,
     mode: o.mode === "free" ? "free" : "time",
     min: Math.max(5, Math.min(60, o.min | 0 || 10)),
-    bonus: Math.max(0, o.bonus | 0),
     sfx: Object.assign({ on: true, vol: 0.45 }, o.sfx || {}),
     auto: o.auto === true,
     profiles: o.profiles.map(pr => {
@@ -100,12 +152,183 @@ function normalize(o) {
   out.profiles.forEach(p => { SEQ = Math.max(SEQ, p.id + 1); });
   return out;
 }
+function repairAll(o) {
+  o.profiles.forEach(p => { [0, 1].forEach(gi => repairLv(p.lv[gi], gi, p.stat)); });
+  return o;
+}
+const copyState = value => JSON.parse(JSON.stringify(value));
+const sameState = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const storageLocks = navigator.locks;
+const journalPrefix = KEY + ":save:";
+const pageId = window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+let saveSeq = 0, lastSaveTime = 0;
+const conflictKey = KEY + ":conflict:";
+
+function readStoredState() {
+  const text = localStorage.getItem(KEY);
+  let raw, state;
+  try { raw = JSON.parse(text); state = normalize(raw); }
+  catch (e) { raw = null; state = fresh(); }
+  try { repairAll(state); } catch (e) { /* 尽量保留可读取的档案 */ }
+  if (raw?.epoch) state.epoch = raw.epoch;
+  return { state, token: raw?.commitToken };
+}
+
+// 只合入本页实际改动的字段，不把打开页面时的旧档案覆盖回去。
+function mergeProfile(base, next, shared) {
+  const result = { ...shared, lv: shared.lv.slice() };
+  if (base.name !== next.name) result.name = next.name;
+  const progress = ({ left, ...value }) => value;
+  next.lv.forEach((slot, i) => {
+    const previous = base.lv[i], current = shared.lv[i];
+    if (sameState(previous, slot)) return;
+    if (sameState(progress(previous), progress(current))) result.lv[i] = slot;
+    else if (!sameState(progress(previous), progress(slot))) throw new Error("progress conflict");
+  });
+  const counters = (old, local, current) => Object.fromEntries(Object.keys(local).map(k => [k,
+    k === "sec" ? Math.max(local[k], current[k] || 0) : Math.max(0, (current[k] || 0) + local[k] - (old[k] || 0))
+  ]));
+  if (!sameState(base.stat, next.stat)) result.stat = counters(base.stat, next.stat, shared.stat);
+  if (!sameState(base.today, next.today) && next.today.d >= shared.today.d) {
+    const old = base.today.d === next.today.d ? base.today : blankDay();
+    const current = shared.today.d === next.today.d ? shared.today : blankDay();
+    const { d, ...local } = next.today;
+    result.today = { d, ...counters(old, local, current) };
+  }
+  if (!sameState(base.hist, next.hist)) {
+    result.hist = { ...shared.hist };
+    for (const [date, record] of Object.entries(next.hist)) {
+      if (!sameState(base.hist[date], record)) result.hist[date] = counters(base.hist[date] || {}, record, shared.hist[date] || {});
+    }
+  }
+  if (!sameState(base.wrong, next.wrong)) {
+    const key = item => `${item.lv}:${item.idx}`;
+    const prior = new Map(base.wrong.map(item => [key(item), item]));
+    const modified = next.wrong.filter(item => !sameState(item, prior.get(key(item))));
+    const retained = new Set(next.wrong.map(key));
+    const changed = new Set(modified.map(key));
+    result.wrong = modified.concat(shared.wrong.filter(item => !changed.has(key(item)) && (!prior.has(key(item)) || retained.has(key(item))))).slice(0, 100);
+  }
+  return result;
+}
+
+function mergeSave(shared, { base, next, replaceId }) {
+  if (base.epoch !== shared.epoch) throw new Error("reset conflict");
+  if (base.epoch !== next.epoch || sameState(shared, base)) return next;
+  const result = { ...shared };
+  for (const k of ["sel", "limit", "mode", "min", "sfx", "auto"]) {
+    if (!sameState(base[k], next[k])) result[k] = next[k];
+  }
+  const previous = new Map(base.profiles.map(p => [p.id, p]));
+  const edited = new Map(next.profiles.map(p => [p.id, p]));
+  result.profiles = [];
+  for (const p of shared.profiles) {
+    const old = previous.get(p.id), local = edited.get(p.id);
+    if (!old) result.profiles.push(p);
+    else if (local) {
+      if (p.id === replaceId) {
+        if (!sameState(old, p)) throw new Error("replace conflict");
+        result.profiles.push(local);
+      } else result.profiles.push(mergeProfile(old, local, p));
+    }
+  }
+  for (const p of next.profiles) {
+    if (!previous.has(p.id)) result.profiles.push(p);
+    else if (!result.profiles.some(q => q.id === p.id) && !sameState(p, previous.get(p.id))) throw new Error("deleted profile conflict");
+  }
+  if (!result.profiles.length) throw new Error("last profile conflict");
+  const selected = next.profiles[next.cur]?.id;
+  result.cur = Math.max(0, result.profiles.findIndex(p => p.id === selected));
+  return result;
+}
+
+// 同源标签页用浏览器锁串行合并。每笔改动先同步写入日志，刷新或关闭仍能恢复。
+function processSaveJournal(apply) {
+  let { state, token } = readStoredState();
+  const logs = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(journalPrefix)) continue;
+    const text = localStorage.getItem(key);
+    if (text) logs.push({ key, ...JSON.parse(text) });
+  }
+  logs.sort((a, b) => a.time - b.time || a.seq - b.seq);
+  const rejected = new Set();
+  for (const log of logs) {
+    if (log.key === token) {
+      if (apply) localStorage.removeItem(log.key);
+      continue;
+    }
+    if (!rejected.has(log.owner) && !localStorage.getItem(conflictKey + log.owner)) {
+      let merged;
+      try { merged = mergeSave(state, log); }
+      catch (e) {
+        rejected.add(log.owner);
+        if (apply) localStorage.setItem(conflictKey + log.owner, "1");
+      }
+      if (merged) {
+        if (apply) localStorage.setItem(KEY, JSON.stringify({ ...merged, commitToken: log.key }));
+        state = merged;
+      }
+    }
+    if (apply) localStorage.removeItem(log.key);
+  }
+  return state;
+}
 function load() {
-  try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return fresh(); }
+  try { return processSaveJournal(false); }
+  catch (e) {
+    try { return readStoredState().state; } catch (ignored) { return fresh(); }
+  }
 }
 let S = load();
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+let saveBase = copyState(S), saveWarned = false, persistAsked = false, saveBlocked = false;
+function warnSave() {
+  if (saveWarned) return;
+  saveWarned = true;
+  alert("进度没能保存到本机。请先用「备份 · 换设备」导出进度码，再检查浏览器存储空间。");
+}
+function rejectStalePage() {
+  if (saveBlocked) return;
+  saveBlocked = true;
+  alert("另一个页面已更改此档案的进度。此页的冲突改动未保存，页面将重新载入最新进度。");
+  location.reload?.();
+}
+function flushSaves() {
+  storageLocks.request(KEY, () => {
+    processSaveJournal(true);
+    if (localStorage.getItem(conflictKey + pageId)) rejectStalePage();
+  }).catch(warnSave);
+}
+function save(replaceId) {
+  if (saveBlocked) return;
+  try {
+    const next = copyState(S);
+    const time = lastSaveTime = Math.max(Date.now(), lastSaveTime);
+    const log = { base: saveBase, next, replaceId, owner: pageId, time, seq: ++saveSeq };
+    if (storageLocks) {
+      const key = journalPrefix + pageId + ":" + log.seq;
+      localStorage.setItem(key, JSON.stringify(log));
+      flushSaves();
+    } else {
+      const { state } = readStoredState();
+      let merged;
+      try { merged = mergeSave(state, log); }
+      catch (e) { rejectStalePage(); return; }
+      localStorage.setItem(KEY, JSON.stringify(merged));
+    }
+    saveBase = next;
+  } catch (e) { warnSave(); return; }
+  if (!persistAsked && navigator.storage?.persist) {
+    persistAsked = true;
+    navigator.storage.persist().catch(() => {});
+  }
+}
+if (storageLocks) {
+  window.addEventListener("storage", event => {
+    if (event.key === conflictKey + pageId && event.newValue) rejectStalePage();
+  });
+  flushSaves();
 }
 
 const $ = id => document.getElementById(id);
@@ -137,10 +360,11 @@ function todayStr() {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-function ensureToday() {
+function ensureToday(date = todayStr()) {
   const p = prof();
-  if (!p.today || p.today.d !== todayStr()) p.today = blankDay(), p.today.d = todayStr();
-  if (!p.hist[todayStr()]) p.hist[todayStr()] = { n: 0, sec: 0 };
+  if (!p.today || p.today.d !== date) p.today = { ...blankDay(), d: date };
+  if (!p.hist[date]) p.hist[date] = { n: 0, sec: 0 };
+  return date;
 }
 
 /* ---------- 图标 ---------- */
@@ -201,7 +425,9 @@ function renderWho() {
       return lv.nm + (clearedOf(L, k) ? " 第" + L.round + "轮 全通关"
         : (L.active ? " 第" + L.round + "轮 第" + guanNo(L) + "关" : (L.bestRound ? " 第" + L.bestRound + "轮" : " 未开始")));
     }).join(" · ");
-    row.innerHTML = `<span class="pn">${p.name}</span><span class="pm">${sum}</span>`;
+    row.innerHTML = `<span class="pn"></span><span class="pm"></span>`;
+    row.querySelector(".pn").textContent = p.name;        // 名字是用户输入，别当 HTML 插
+    row.querySelector(".pm").textContent = sum;
     row.onclick = e => {
       if (e.target.classList.contains("px")) return;
       S.cur = i; save(); panel.classList.add("hide"); renderHome();
@@ -221,6 +447,7 @@ function renderWho() {
       if (S.profiles.length <= 1) { alert("至少留一个档案"); return; }
       if (!confirm("删除「" + p.name + "」的档案和全部进度？")) return;
       S.profiles.splice(i, 1);
+      if (i < S.cur) S.cur--;                 // 删的是前面的档案，当前孩子的下标要跟着前移
       S.cur = Math.min(S.cur, S.profiles.length - 1);
       save(); renderHome();
     };
@@ -235,7 +462,7 @@ function renderWho() {
     if (n === null) return;
     const t = n.trim().slice(0, 12);
     if (!t) return;
-    S.profiles.push(newProfile(t));
+    S.profiles.push(createProfile(t));
     S.cur = S.profiles.length - 1;
     save(); renderHome();
     $("whoPanel").classList.remove("hide");
@@ -254,7 +481,7 @@ function renderToday() {
   $("rowMin").classList.toggle("hide", S.mode !== "time");
   $("numMin").value = S.min;
   document.querySelectorAll("#rowMin [data-min]").forEach(b => b.classList.toggle("on", +b.dataset.min === S.min));
-  const quota = S.min * 60 + S.bonus;
+  const quota = S.min * 60 + (p.today.bonus || 0);
   $("todayHint").textContent = S.mode === "free"
     ? "自由模式：想做多久做多久"
     : "今天已做 " + Math.round(p.today.sec / 60) + " 分钟 / 共 " + Math.round(quota / 60) + " 分钟";
@@ -268,14 +495,18 @@ function renderCal12() {
   cal.innerHTML = "";
   cal.classList.add("rolling");
   const end = new Date();
-  // 让最后一格（今天）落在正确的星期列：前面补 0..6 个空格
-  const lead = (end.getDay() + 6) % 7;
+  const windowDays = 84;
+  const start = new Date(end);
+  start.setDate(start.getDate() - (windowDays - 1));
+  // 左侧补空以对齐星期列，同时保留完整的 84 个日期。
+  const lead = (start.getDay() + 6) % 7;
   for (let i = 0; i < lead; i++) {
     const blank = document.createElement("div");
     blank.className = "cell empty";
     cal.appendChild(blank);
   }
-  for (let i = 83 - lead; i >= 0; i--) {
+  let sum = 0, active = 0;
+  for (let i = windowDays - 1; i >= 0; i--) {
     const d = new Date(end);
     d.setDate(d.getDate() - i);
     const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -286,13 +517,6 @@ function renderCal12() {
     cell.title = key + " · " + n + " 题";
     cell.innerHTML = `<span>${d.getDate()}</span>`;
     cal.appendChild(cell);
-  }
-  let sum = 0, active = 0;
-  for (let i = 0; i < 84; i++) {
-    const d = new Date(end);
-    d.setDate(d.getDate() - i);
-    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    const n = (p.hist[key] && p.hist[key].n) || 0;
     if (n > 0) { sum += n; active++; }
   }
   $("calSum").textContent = "近 12 周 " + sum + " 题 · " + active + " 天有做题";
@@ -333,16 +557,15 @@ function renderCal() {
     cell.innerHTML = `<span>${day}</span>` + (n ? `<em>${n}</em>` : "");
     cal.appendChild(cell);
   }
-  // 连续天数
+  // 连续天数：今天还没做时从昨天往前数，别让早上一打开就显示「连续 0 天」
   let streak = 0;
   const d0 = new Date();
-  for (;;) {
-    const key = d0.getFullYear() + "-" + String(d0.getMonth() + 1).padStart(2, "0") + "-" + String(d0.getDate()).padStart(2, "0");
-    const n = (p.hist[key] && p.hist[key].n) || 0;
-    if (n > 0) { streak++; d0.setDate(d0.getDate() - 1); }
-    else break;
-  }
-  $("streak").textContent = "连续 " + streak + " 天";
+  const dkey = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const nOf = d => (p.hist[dkey(d)] && p.hist[dkey(d)].n) || 0;
+  const todayZero = nOf(d0) === 0;
+  if (todayZero) d0.setDate(d0.getDate() - 1);
+  while (nOf(d0) > 0) { streak++; d0.setDate(d0.getDate() - 1); }
+  $("streak").textContent = "连续 " + streak + " 天" + (todayZero && streak ? "（今天还没做）" : "");
   let sum = 0, activeDays = 0;
   for (let day = 1; day <= days_in_month(y, m); day++) {
     const key = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
@@ -454,7 +677,7 @@ let cell = 30, ox = 0, oy = 0;
 let autoTimer = null;
 let practice = false, practiceLine = null, ansIdx = 0, peekAns = false;
 let mapView = "month";
-let tiStart = 0, timeUp = false, dayTimer = null;
+let tiStart = 0, dayTimer = null;
 
 function fb(text, tone) {
   const el = $("fb");
@@ -474,7 +697,12 @@ function hideMask() {
 }
 
 /* ---------- 每题倒计时 ---------- */
-let cdEnd = 0, cdLeft = 0, cdTimer = null;
+let cdEnd = 0, cdLeft = null, cdTimer = null;
+function expireFirstMove() {
+  if (practice || answered || firstMove || !cdTimer || Date.now() < cdEnd) return false;
+  tickCd();
+  return true;
+}
 function tickCd() {
   const left = Math.max(0, cdEnd - Date.now());
   cdLeft = left;
@@ -488,30 +716,53 @@ function startCd(ms) {
   cdLeft = ms; cdEnd = Date.now() + ms;
   const el = $("clock");
   el.className = "";
+  cdTimer = setInterval(tickCd, 100);
   tickCd();
-  cdTimer = setInterval(tickCd, 100);
 }
-function stopCd() { if (cdTimer) { clearInterval(cdTimer); cdTimer = null; } }
-function pauseCd() { if (cdTimer) { cdLeft = Math.max(0, cdEnd - Date.now()); stopCd(); } }
+function stopCd() {
+  if (cdTimer) clearInterval(cdTimer);
+  cdTimer = null;
+  cdLeft = null;
+}
+function pauseCd() {
+  if (!cdTimer || expireFirstMove()) return;
+  const remaining = Math.max(0, cdEnd - Date.now());
+  stopCd();
+  cdLeft = remaining;
+}
 function resumeCd() {
-  if (cdTimer || answered || firstMove || cdLeft <= 0) return;
-  cdEnd = Date.now() + cdLeft;
-  cdTimer = setInterval(tickCd, 100);
+  if (cdTimer || practice || answered || firstMove || cdLeft === null) return;
+  startCd(cdLeft);
 }
 
 /* ---------- 每日时间（做题页停留时长） ---------- */
 // 口径：今天在做题页待了多久。答题、看答案、过关结算、跟走练习都算；
 // 回首页 / 切到后台就停。today.sec 由这段计时器每秒写入，所以「今日剩」是活的。
-let dayBaseMs = 0, dayRunAt = 0;          // 已累计的毫秒 + 本段计时起点（0 = 停着）
+let dayBaseMs = 0, dayRunAt = 0, dayDate = "";   // dayDate：基准属于哪一天          // 已累计的毫秒 + 本段计时起点（0 = 停着）
 function daySpentMs() { return dayBaseMs + (dayRunAt ? Date.now() - dayRunAt : 0); }
 function dayPause() {
   if (!dayRunAt) return;
   dayBaseMs = daySpentMs();
   dayRunAt = 0;
 }
-function dayLeftSec() { return Math.max(0, S.min * 60 + S.bonus - daySpentMs() / 1000); }
+function dayQuotaSec() { return S.min * 60 + ((prof().today && prof().today.bonus) || 0); }
+function syncDayClock() {
+  const date = todayStr();
+  if (dayDate && dayDate !== date) {
+    dayBaseMs = 0;
+    if (dayRunAt) dayRunAt = Date.now();
+    dayDate = date;
+  }
+  return ensureToday(date);
+}
+function dayLeftSec() {
+  syncDayClock();
+  return Math.max(0, dayQuotaSec() - daySpentMs() / 1000);
+}
+// 每次现算：切到「自由」、换孩子、过零点都自动失效，不会留一个粘住的标志
+function isTimeUp() { return S.mode === "time" && dayLeftSec() <= 0; }
 // 进入做题页时，把基准对齐到档案里已存的 today.sec
-function dayBind() { dayBaseMs = prof().today.sec * 1000; dayRunAt = 0; }
+function dayBind() { ensureToday(); dayBaseMs = prof().today.sec * 1000; dayRunAt = 0; dayDate = todayStr(); }
 function startDayTimer() {
   if (dayTimer) { clearInterval(dayTimer); dayTimer = null; }
   dayPause();                              // 上一段先折进 base，再从这儿接着走
@@ -519,23 +770,19 @@ function startDayTimer() {
   $("dayline").classList.toggle("hide", !timed);
   if (!dayRunAt) dayRunAt = Date.now();
   const tick = () => {
-    const p0 = prof();
-    if (p0.today.d !== todayStr()) { dayBaseMs = 0; dayRunAt = Date.now(); }  // 跨零点重来
-    ensureToday();
+    const date = syncDayClock();
     const p = prof(), spent = Math.round(daySpentMs() / 1000);
     if (spent > p.today.sec) {              // 每秒把时长写进档案，顺手刷新地图用的 hist
       p.today.sec = spent;
-      const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
-      h.sec = spent;
+      p.hist[date].sec = spent;
       if (!(spent % 10)) save();
     }
     if (!timed) return;
     const left = dayLeftSec();
-    const total = S.min * 60 + S.bonus;
+    const total = dayQuotaSec();
     const s = Math.max(0, Math.floor(left % 60));
     $("dayLeft").textContent = "今日剩 " + Math.floor(left / 60) + ":" + String(s).padStart(2, "0");
     $("dayTotal").textContent = "共 " + Math.round(total / 60) + " 分钟";
-    if (left <= 0 && !timeUp) { timeUp = true; }
   };
   tick();
   dayTimer = setInterval(tick, 1000);
@@ -667,6 +914,7 @@ function draw(from) {
   svg.innerHTML = g;
   svg.onclick = onTap;
   svg._c0 = c0; svg._r0 = r0;
+  svg._c1 = c1; svg._r1 = r1;
   return caps;
 }
 
@@ -686,7 +934,13 @@ function branchStep(lines, st, r, c, question) {
   const line = aliveOK[0];
   let s = st + 1;
   const white = s < line.length ? line[s] : null;
-  if (white) s++;
+  if (white) {
+    s++;
+    // 白棋只能应一手：和这手应法不一致的线路要剔掉，否则下一手可能按「白棋没这么应」的线路判对，
+    // 再把那条线路的白子摆到别处（多解题里有十几处这种分叉，如级位 172、段位 35 题）。
+    // 在黑这手就结束的线路保留，维持原来「有一条走完就算解出」的判法。
+    aliveOK = aliveOK.filter(b => b.length <= st + 1 || (b[st + 1][0] === white[0] && b[st + 1][1] === white[1]));
+  }
   return { alive: aliveOK, hit: true, white, step: s, done: aliveOK.some(b => s >= b.length) };
 }
 // 把 SVG 视图坐标换算为棋盘交叉点；棋盘外（含木质边框）返回 null，不再 clamp 到边缘
@@ -696,7 +950,7 @@ function tapPoint(e) {
   const py = (e.clientY - rect.top) / rect.height * vb.height;
   const c = Math.round((px - ox) / cell) + el._c0;
   const r = Math.round((py - oy) / cell) + el._r0;
-  if (r < 0 || r >= NB || c < 0 || c >= NB) return null;
+  if (r < el._r0 || r > el._r1 || c < el._c0 || c > el._c1) return null;
   if (Math.abs(px - (ox + (c - el._c0) * cell)) > cell * 0.45 ||
       Math.abs(py - (oy + (r - el._r0) * cell)) > cell * 0.45) return null;
   return [r, c];
@@ -704,7 +958,7 @@ function tapPoint(e) {
 
 function onTap(e) {
   if (practice) { onPracticeTap(e); return; }
-  if (answered) return;
+  if (answered || expireFirstMove()) return;
   const pt = tapPoint(e);
   if (!pt) { fb("请点在棋盘交叉点上（边框不算落子）。", ""); return; }
   const r = pt[0], c = pt[1];
@@ -742,20 +996,22 @@ function tiSolved() {
   answered = true;
   stopCd();
   $("skipBtn").classList.add("hide");
+  const date = syncDayClock();
   const p = prof(), L = slotState();
   p.stat.ok++;
   p.today.fo++;
   p.today.n++;
-  const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
-  h.n = p.today.n;
+  p.hist[date].n = p.today.n;
   L.done++;
   L.guanDone++;
   L.bestRound = Math.max(L.bestRound, L.round);
   L.left = 0;
+  const okN = correctOf(L);
+  if (L.guanDone >= N_TI) pendingResult = settleGuan(L, S.sel, p.stat);   // 第 10 题：当场结算并存档
   save();
   SFX.ok();
   draw();
-  fb("哈哈成功啦！本关已对 " + correctOf(L) + " 题", "ok");
+  fb("哈哈成功啦！本关已对 " + okN + " 题", "ok");
   if (S.auto) { clearTimeout(autoTimer); autoTimer = setTimeout(afterTi, 800); }
   else showNext("下题 →", afterTi);
 }
@@ -764,36 +1020,44 @@ function tiFailed(reason, r, c) {
   answered = true;
   stopCd();
   $("skipBtn").classList.add("hide");
+  const date = syncDayClock();
   const p = prof(), L = slotState();
   const failedTi = tiNo(L), failedGuan = guanNo(L);
   L.wrong++;
   L.done++;
   L.guanDone++;
+  L.left = 0;
   if (reason === "wrong") { p.stat.wrong++; wrongMarks.push([r, c]); draw(); SFX.wrong(); }
-  else { p.stat.timeout++; SFX.timeup(); }
+  else {
+    if (reason === "skip") p.stat.skip = (p.stat.skip | 0) + 1;   // 主动跳过单独计，不混进「超时次数」
+    else p.stat.timeout++;
+    SFX.timeup();
+  }
   p.today.fa++;
   p.today.n++;
-  const h = p.hist[todayStr()] || (p.hist[todayStr()] = { n: 0, sec: 0 });
-  h.n = p.today.n;
+  p.hist[date].n = p.today.n;
   // 错题集
   const item = {
     lv: S.sel, idx: Math.min(L.done - 1, bankLen() - 1), no: cur.no || 0,
     reason: reason === "wrong" ? "落子错误" : (reason === "skip" ? "主动跳过" : "超时"),
-    d: todayStr(), round: L.round, guan: failedGuan, ti: failedTi
+    d: date, round: L.round, guan: failedGuan, ti: failedTi
   };
   p.wrong = [item].concat(p.wrong.filter(w => !(w.lv === item.lv && w.idx === item.idx))).slice(0, 100);
+  const wrongN = L.wrong, okN = correctOf(L), restN = N_TI - L.guanDone;
+  const guanEnd = L.guanDone >= N_TI;
+  if (guanEnd) pendingResult = settleGuan(L, S.sel, p.stat);   // 第 10 题：当场结算并存档
   save();
-  $("pwrong").textContent = L.wrong;
-  $("pcount").textContent = correctOf(L);
+  $("pwrong").textContent = wrongN;
+  $("pcount").textContent = okN;
   const why = reason === "skip" ? "这题跳过了（记 1 错）。"
     : (reason === "timeout" ? "时间到，这题算错。" : "怎么会失败呢！");
-  fb(L.wrong >= 2
-     ? "本关已错 " + L.wrong + " 题，过不了了。做完剩下 " + (N_TI - L.guanDone) + " 题再一起结算，也可以直接「重新开始本关」。"
+  fb(wrongN >= 2
+     ? "本关已错 " + wrongN + " 题，过不了了。做完剩下 " + restN + " 题再一起结算，也可以直接「重新开始本关」。"
      : why + "可以点「答案」看正解，或「下题」。", "no");
   syncRestart();
   $("ansBtn").classList.remove("hide");
   // 原盘规矩：错几题都不中止，一律把 10 题走完，第 10 题做完再弹结算。
-  if (L.guanDone >= N_TI) {
+  if (guanEnd) {
     $("nextBtn").classList.add("hide");
     $("restartGuan").classList.add("hide");
     clearTimeout(autoTimer);
@@ -803,91 +1067,46 @@ function tiFailed(reason, r, c) {
   }
 }
 
+let pendingResult = null;       // 第 10 题做完时 settleGuan 的结果；状态已经存好，这里只等着弹窗
 function afterTi() {
   hideAnswer();
-  const L = slotState();
-  if (timeUp) { showTimeUp(); return; }
-  if (L.guanDone >= N_TI) { guanResult(); return; }
+  if (pendingResult) { const r = pendingResult; pendingResult = null; showGuanResult(r); return; }
+  if (isTimeUp()) { showTimeUp(); return; }
   enterTi();
 }
-function guanResult() {
-  const L = slotState();
-  if (L.wrong <= 1) guanPassed(); else guanFailed();
+// 结算弹窗上的「继续」：时间到了就先弹时间到
+function nextAfterMask() {
+  if (isTimeUp()) { showTimeUp(); return; }
+  hideMask(); enterTi();
 }
-function guanPassed() {
-  const L = slotState();
-  const passedNo = L.done / N_TI;
-  const wrong = L.wrong;
-  const correct = N_TI - wrong;
-  L.wrong = 0;
-  L.guanDone = 0;
-  L.bestRound = Math.max(L.bestRound, L.round);
-  prof().stat.guans++;
-  const target = targetOf(L.round);
-  if (L.done >= target) { roundPassed(correct, wrong); return; }
-  save();
-  SFX.done();
-  fb("第 " + passedNo + " 关通过 · 对 " + correct + " 题 错 " + wrong + " 题", "ok");
+function showGuanResult(r) {
   $("nextBtn").classList.add("hide");
   $("restartGuan").classList.add("hide");
-  $("pcount").textContent = correct;
-  $("pwrong").textContent = wrong;
-  const nextNo = passedNo + 1;
-  setMask("恭喜您过了上关", "对 " + correct + " 题 · 错 " + wrong + " 题。准备好了吗？",
-          "开始第 " + nextNo + " 关", () => {
-            if (timeUp) { showTimeUp(); return; }
-            hideMask(); enterTi();
-          });
-}
-function roundPassed(correct, wrong) {
-  const L = slotState();
-  const doneRound = L.round;
-  const maxR = maxRound();
-  if (doneRound < maxR) {
-    L.round++;
-    L.done = 0;
-    L.guanDone = 0;
-    save();
-    SFX.done();
-    setMask("第 " + doneRound + " 轮完成", "对 " + correct + " 题 · 错 " + wrong + " 题。下一轮 " +
-            (doneRound + 1) * ROUND_UNIT + " 题，从第 1 关重新开始。",
-            "开始第 " + L.round + " 轮", () => {
-              if (timeUp) { showTimeUp(); return; }
-              hideMask(); enterTi();
-            });
+  $("pcount").textContent = r.correct;
+  $("pwrong").textContent = r.wrong;
+  if (r.kind === "fail") { showGuanFailed(r); return; }
+  SFX.done();
+  if (r.kind === "pass") {
+    fb("第 " + r.no + " 关通过 · 对 " + r.correct + " 题 错 " + r.wrong + " 题", "ok");
+    setMask("恭喜您过了上关", "对 " + r.correct + " 题 · 错 " + r.wrong + " 题。准备好了吗？",
+            "开始第 " + (r.no + 1) + " 关", nextAfterMask);
+  } else if (r.kind === "round") {
+    setMask("第 " + r.doneRound + " 轮完成", "对 " + r.correct + " 题 · 错 " + r.wrong + " 题。下一轮 " +
+            Math.min((r.doneRound + 1) * ROUND_UNIT, bankLen()) + " 题，从第 1 关重新开始。",
+            "开始第 " + (r.doneRound + 1) + " 轮", nextAfterMask);
   } else {
-    L.done = targetOf(doneRound);
-    save();
-    SFX.done();
     setMask("全部通过！", LEVELS[S.sel].nm + "的 " + totalGuan(S.sel) + " 关全部走完了。回首页点「重刷」可以从第 1 轮再来。",
             "回首页", () => { hideMask(); goHome(); });
   }
 }
-function guanFailed() {
-  const L = slotState();
-  const no = L.done / N_TI;
-  const wrong = L.wrong;
-  const correct = N_TI - wrong;
-  L.done -= N_TI;
-  L.guanDone = 0;
-  L.wrong = 0;
-  L.active = true;
-  L.left = 0;
-  save();
+function showGuanFailed(r) {
   $("fb").classList.add("hide");
-  $("nextBtn").classList.add("hide");
   $("ansBtn").classList.add("hide");
-  $("restartGuan").classList.add("hide");
   $("skipBtn").classList.add("hide");
   // 和原盘一样：10 题走完直接弹「本关不通过」，点一下就回本关第 1 题
   setMask("本关不通过",
-          "第 " + no + " 关 · 对 " + correct + " 题 错 " + wrong + " 题。只允许错 1 题，从第 1 题再来一次。",
-          "重新开始本关", () => {
-            if (timeUp) { showTimeUp(); return; }
-            hideMask(); enterTi();
-          });
-  $("pwrong").textContent = wrong;
-  $("pcount").textContent = correct;
+          "第 " + r.no + " 关 · 对 " + r.correct + " 题 错 " + r.wrong + " 题。只允许错 1 题，从第 1 题再来一次。",
+          "重新开始本关", nextAfterMask);
 }
 
 /* ---------- 进入一题 ---------- */
@@ -897,6 +1116,7 @@ function enterTi() {
   const b = bank();
   cur = b[Math.min(L.done, b.length - 1)];
   placed = []; step = 0; answered = false; firstMove = false;
+  pendingResult = null;                    // 结算前退出过的话，旧弹窗不再补弹（状态早已存好）
   wrongMarks = [];
   practice = false; practiceLine = null;
   alive = cur.qa && cur.qa.length ? cur.qa.slice() : [cur.q || []];
@@ -1077,8 +1297,8 @@ function showTimeUp() {
   stopCd(); stopDayTimer();
   setMask("今天的时间到了", "今天已做 " + Math.round(prof().today.sec / 60) + " 分钟。可以休息，也可以再来 5 分钟。",
           "再来 5 分钟", () => {
-            S.bonus += 300;
-            timeUp = false;
+            ensureToday();
+            prof().today.bonus = (prof().today.bonus || 0) + 300;   // 只加今天、只加这个孩子
             save();
             hideMask();
             enterTi();
@@ -1104,7 +1324,7 @@ function practiceWrong(it) {
   const b = DATA[it.lv] && DATA[it.lv].p;
   if (!b || !b[it.idx]) return;
   cur = b[it.idx];
-  practiceLine = cur.qa ? cur.qa[0] : (cur.q || []);
+  practiceLine = (cur.qa && cur.qa.length) ? (cur.q && cur.q.length ? cur.q : cur.qa[0]) : (cur.q || []);   // 和判题一样优先首选解 q
   practice = true;
   peekAns = true;                  // 错题集练习本来就是"跟着编号走"
   placed = []; step = 0; answered = false; wrongMarks = [];
@@ -1119,7 +1339,7 @@ function practiceWrong(it) {
   $("phead").textContent = "错题练习 · 第 " + (it.no || "?") + " 号";
   $("goal").textContent = cur.t || "黑先";
   $("pno").textContent = it.no || "—";
-  $("pbest").textContent = prof().lv[S.sel].bestRound || 0;
+  $("pbest").textContent = (prof().lv[it.lv] || prof().lv[S.sel]).bestRound || 0;   // 错题属于哪个难度就显示哪个
   $("pcount").textContent = 0;
   $("pwrong").textContent = 0;
   $("clock").className = "done";
@@ -1151,10 +1371,19 @@ function enterPlay() {
   $("whoPanel").classList.add("hide");
   dayBind();                 // 这一段从档案里已存的时长接着算
   startDayTimer();
-  if (timeUp) { showTimeUp(); return; }  // 时间到不能被回首页/结算弹窗绕过
+  if (isTimeUp()) { showTimeUp(); return; }  // 时间到不能被回首页/结算弹窗绕过
   enterTi();
 }
+// 本题第一手还没走时离开（回首页 / 切后台 / 被系统杀掉），把剩余秒数记下来，回来接着倒数，
+// 不然「返回 → 继续」就能把倒计时刷回满格。
+function stashLeft() {
+  if (!cdTimer || answered || firstMove || practice || expireFirstMove()) return;
+  const L = slotState();
+  L.left = Math.max(1, cdEnd - Date.now());
+  save();
+}
 function goHome() {
+  stashLeft();
   clearTimeout(autoTimer); autoTimer = null;
   stopCd(); stopDayTimer();
   SFX.cancel();
@@ -1183,10 +1412,10 @@ $("whoBtn").onclick = () => { $("whoPanel").classList.toggle("hide"); };
 
 $("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {
-  if (answered) return;
+  if (answered || expireFirstMove()) return;
   if ($("skipBtn").disabled || Date.now() - tiStart < 700) return;   // 刚翻到这一题，挡掉连点/布局上移带来的误触
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
-  tiFailed("skip");
+  if (!expireFirstMove()) tiFailed("skip");
 };
 // 错满 2 题后重开本关：本关做过的题清零，从本关第 1 题重来
 $("restartGuan").onclick = () => {
@@ -1241,16 +1470,19 @@ function syncManual() {
   const lv = +$("mSetLv").value || 0;
   const maxR = maxRoundOf(lv);
   $("mSetRound").max = String(maxR);
-  let round = Math.max(1, Math.min(maxR, +$("mSetRound").value || 1));
-  if (String(round) !== $("mSetRound").value) $("mSetRound").value = round;
-
-  const target = Math.min(round * ROUND_UNIT, DATA[lv].p.length);
+  const readInt = (id, max) => {
+    const n = Number($(id).value);
+    return Number.isInteger(n) && n >= 1 && n <= max ? n : null;
+  };
+  const round = readInt("mSetRound", maxR);
+  const target = Math.min((round || 1) * ROUND_UNIT, DATA[lv].p.length);
   const maxG = Math.max(1, Math.ceil(target / N_TI));
   $("mSetGuan").max = String(maxG);
-  let guan = Math.max(1, Math.min(maxG, +$("mSetGuan").value || 1));
-  if (String(guan) !== $("mSetGuan").value) $("mSetGuan").value = guan;
-  let ti = Math.max(1, Math.min(N_TI, +$("mSetTi").value || 1));
-  if (String(ti) !== $("mSetTi").value) $("mSetTi").value = ti;
+  const guan = readInt("mSetGuan", maxG), ti = readInt("mSetTi", N_TI);
+  if (round === null || guan === null || ti === null) {
+    $("mSetHint").textContent = "请输入整数：轮次 1–" + maxR + "，关号 1–" + maxG + "，题号 1–" + N_TI + "。";
+    return null;
+  }
 
   const done = (guan - 1) * N_TI + (ti - 1);
   $("mSetHint").textContent = "第 " + round + " 轮共 " + target + " 题（" + maxG +
@@ -1263,6 +1495,7 @@ $("mSetGuan").oninput = syncManual;
 $("mSetTi").oninput = syncManual;
 $("mSetApply").onclick = () => {
   const m = syncManual();
+  if (!m) return;
   if (!confirm("把" + LEVELS[m.lv].nm + "设成第 " + m.round + " 轮、从第 " + m.guan + " 关第 " + m.ti + " 题开始？\n\n会覆盖这个难度原来的进度。")) return;
   const L = prof().lv[m.lv];
   L.round = m.round;
@@ -1270,6 +1503,7 @@ $("mSetApply").onclick = () => {
   L.guanDone = m.ti - 1;
   L.wrong = 0;
   L.active = true;
+  L.left = 0;
   L.bestRound = Math.max(L.bestRound, m.round);
   save(); renderHome();
   $("mSetHint").textContent = "已设置：" + LEVELS[m.lv].nm + " · 第 " + m.round + " 轮 · 第 " + m.guan + " 关第 " + m.ti + " 题";
@@ -1286,63 +1520,89 @@ function shiftDay(dstr, delta) {
   const d = new Date(p[0], p[1] - 1, p[2] + delta);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-function dayOffset(dstr) {
-  const a = String(dstr).split("-").map(Number), b = todayStr().split("-").map(Number);
-  if (a.length !== 3 || b.length !== 3) return 0;
-  return Math.max(0, Math.round((new Date(b[0], b[1] - 1, b[2]) - new Date(a[0], a[1] - 1, a[2])) / 86400000));
+function dayOffset(dstr, end = todayStr()) {
+  const a = String(dstr).split("-").map(Number), b = end.split("-").map(Number);
+  if (a.length !== 3 || b.length !== 3 || a.some(n => !Number.isFinite(n))) return 0;
+  return Math.max(0, (Date.UTC(b[0], b[1] - 1, b[2]) - Date.UTC(a[0], a[1] - 1, a[2])) / 86400000);
 }
-/** 活跃地图：最近 180 天，一个字符一天（0-9a-z，最多 35 题），前面空白天不传 */
-function packMap(p) {
-  const end = todayStr(), days = [];
+/** 保留旧版可读的字符图，另外记录超过 35 题的日期和精确数量。 */
+function packMap(p, end = todayStr()) {
+  const days = [], extra = [];
   for (let i = MAP_MAX_DAYS - 1; i >= 0; i--) {
-    const n = (p.hist[shiftDay(end, -i)] && p.hist[shiftDay(end, -i)].n) || 0;
+    const n = p.hist[shiftDay(end, -i)]?.n || 0;
     days.push(Math.min(35, Math.max(0, n)).toString(36));
+    if (n > 35) extra.push([i, n]);
   }
-  let first = 0;
-  while (first < days.length && days[first] === "0") first++;
-  if (first >= days.length) return null;
-  return [end, days.slice(first).join("")];
+  const str = days.join("").replace(/^0+/, "");
+  if (!str) return null;
+  return extra.length ? [end, str, extra] : [end, str];
 }
 function unpackMap(m) {
   const out = {};
   if (!Array.isArray(m) || m.length < 2) return out;
-  const end = m[0], str = String(m[1] || "");
-  for (let i = 0; i < str.length && i < MAP_MAX_DAYS; i++) {
-    const v = parseInt(str[i], 36);
-    if (Number.isFinite(v) && v > 0) out[shiftDay(end, -(str.length - 1 - i))] = v;
+  const [end, str, extra = []] = m;
+  for (let i = 0; i < str.length; i++) {
+    const n = parseInt(str[i], 36);
+    if (n > 0) out[shiftDay(end, i - str.length + 1)] = n;
   }
+  for (const [offset, n] of extra) out[shiftDay(end, -offset)] = n;
   return out;
 }
 function packPortable(withWrong, withMap) {
   const p = prof();
-  const t = (p.today && p.today.d === todayStr()) ? p.today : { n: 0, sec: 0, fo: 0, fa: 0 };
+  const date = todayStr();
+  const t = p.today?.d === date ? p.today : blankDay();
   const o = {
     v: 6, nm: p.name, at: Date.now(),
     lv: p.lv.map(L => [L.round, L.done, L.guanDone, L.wrong, L.active ? 1 : 0, L.plays, L.bestRound]),
-    t: [todayStr(), t.n, t.sec, t.fo, t.fa],
+    t: [date, t.n, t.sec, t.fo, t.fa],
     s: p.stat
   };
-  if (withMap) { const m = packMap(p); if (m) o.m = m; }
-  if (withWrong) o.w = p.wrong.slice(0, 60).map(w => [w.lv, w.idx, RCODE[w.reason] || 1, dayOffset(w.d), w.round || 1]);
+  if (withMap) { const m = packMap(p, date); if (m) o.m = m; }
+  if (withWrong) o.w = p.wrong.slice(0, 60).map(w => [w.lv, w.idx, RCODE[w.reason] || 1, dayOffset(w.d, date), w.round || 1]);
   return JSON.stringify(o);
 }
 function cleanName(s) {
   return Array.from(String(s || "").replace(/[<>]/g, "").replace(/\s+/g, " ")).slice(0, 12).join("").trim();
 }
-function applyPortable(o) {
+const validBackupDate = d => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && shiftDay(d, 0) === d;
+const backupInt = n => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647;
+function validatePortable(o) {
   if (!o || o.v !== 6) throw new Error("不是这个应用的进度码");
-  const p = prof();
+  const valid = (ok, field) => { if (!ok) throw new Error(field + "记录不完整或格式不正确"); };
+  valid(Array.isArray(o.lv) && o.lv.length === 2 && o.lv.every(a =>
+    Array.isArray(a) && a.length >= 7 && a.slice(0, 7).every(backupInt)), "闯关");
+  if (o.t !== undefined) valid(Array.isArray(o.t) && o.t.length >= 5 && validBackupDate(o.t[0]) && o.t.slice(1, 5).every(backupInt), "今日");
+  if (o.s !== undefined) valid(o.s && typeof o.s === "object" && !Array.isArray(o.s) &&
+    Object.keys(blankStat()).every(k => o.s[k] === undefined || backupInt(o.s[k])), "战绩");
+  if (o.w !== undefined) valid(Array.isArray(o.w) && o.w.length <= 100 && o.w.every(a =>
+    Array.isArray(a) && a.length >= 4 && a.slice(0, 5).every(backupInt) &&
+    a[0] <= 1 && a[1] < bankLenOf(a[0]) && a[3] <= 365250), "错题");
+  if (o.m !== undefined && o.m !== null) {
+    const m = o.m;
+    valid(Array.isArray(m) && validBackupDate(m[0]) && typeof m[1] === "string" &&
+      m[1].length <= MAP_MAX_DAYS && /^[0-9a-z]*$/.test(m[1]) &&
+      (m[2] === undefined || (Array.isArray(m[2]) && m[2].length <= MAP_MAX_DAYS && m[2].every(a =>
+        Array.isArray(a) && a.length === 2 && a.every(backupInt) && a[0] < MAP_MAX_DAYS && a[1] > 35))), "活跃地图");
+  }
+}
+function applyPortable(o, p) {
+  validatePortable(o);
+  p = p || prof();
   p.name = cleanName(o.nm || p.name) || p.name;
   if (Array.isArray(o.lv)) {
     p.lv = [0, 1].map(i => {
       const a = o.lv[i] || [];
-      return normLv({ round: a[0], done: a[1], guanDone: a[2], wrong: a[3], active: !!a[4], plays: a[5], bestRound: a[6] });
+      return repairLv(normLv({ round: a[0], done: a[1], guanDone: a[2], wrong: a[3], active: !!a[4], plays: a[5], bestRound: a[6] }), i, null);
     });
   }
   if (Array.isArray(o.t) && o.t[0] === todayStr()) {
-    p.today = { d: o.t[0], n: +o.t[1] || 0, sec: +o.t[2] || 0, fo: +o.t[3] || 0, fa: +o.t[4] || 0 };
+    p.today = { d: o.t[0], n: +o.t[1] || 0, sec: +o.t[2] || 0, fo: +o.t[3] || 0, fa: +o.t[4] || 0, bonus: 0 };
   }
-  if (o.s) p.stat = Object.assign(blankStat(), o.s);
+  if (o.s) {
+    p.stat = blankStat();
+    for (const k of Object.keys(p.stat)) if (o.s[k] !== undefined) p.stat[k] = o.s[k];
+  }
   if (o.m) {
     const m = unpackMap(o.m);
     Object.keys(m).forEach(d => {
@@ -1351,29 +1611,32 @@ function applyPortable(o) {
     });
   }
   if (Array.isArray(o.w)) {
-    p.wrong = o.w.map(a => ({
-      lv: a[0] | 0, idx: a[1] | 0, reason: RNAME[a[2]] || "落子错误",
-      d: shiftDay(todayStr(), -(a[3] | 0)), round: a[4] | 0 || 1,
-      guan: Math.floor((a[1] | 0) / N_TI) + 1, ti: ((a[1] | 0) % N_TI) + 1, no: (a[1] | 0) + 1
-    })).slice(0, 100);
+    const backupDay = o.t?.[0] || o.m?.[0] || todayStr();
+    p.wrong = o.w.map(([lv, idx, reason, offset, round]) => ({
+      lv, idx, reason: RNAME[reason] || "落子错误",
+      d: shiftDay(backupDay, -offset), round: round || 1,
+      guan: Math.floor(idx / N_TI) + 1, ti: (idx % N_TI) + 1, no: DATA[lv].p[idx].no
+    }));
   }
 }
+const PLAIN_MAX = 1200;     // 不压缩也不超过这个长度就直接出明文码：iOS 16.4 以下的旧设备解不了 gzip
+const toB64url = bytes => {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  // 进度码要放进 URL / 二维码，统一使用 base64url（不含 + / =）
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
 async function encodeCode(str) {
   const bytes = new TextEncoder().encode(str);
-  let out = bytes, tag = "P";
-  if (typeof CompressionStream !== "undefined") {
-    try {
-      const cs = new CompressionStream("gzip");
-      const b = await new Response(new Blob([bytes]).stream().pipeThrough(cs)).blob();
-      out = new Uint8Array(await b.arrayBuffer());
-      tag = "G";
-    } catch (e) {}
+  const plain = "GS6P:" + toB64url(bytes);
+  if (plain.length <= PLAIN_MAX || typeof CompressionStream === "undefined") return plain;
+  try {
+    const cs = new CompressionStream("gzip");
+    const b = await new Response(new Blob([bytes]).stream().pipeThrough(cs)).blob();
+    return "GS6G:" + toB64url(new Uint8Array(await b.arrayBuffer()));
+  } catch (e) {
+    return plain;
   }
-  let s = "";
-  for (let i = 0; i < out.length; i++) s += String.fromCharCode(out[i]);
-  // 进度码要放进 URL / 二维码，统一使用 base64url（不含 + / =）
-  const b64 = btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return "GS6" + tag + ":" + b64;
 }
 async function decodeCode(code) {
   code = String(code || "").trim().replace(/\s+/g, "");
@@ -1385,6 +1648,9 @@ async function decodeCode(code) {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   if (m[1] === "G") {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("这台设备的系统太旧，解不开压缩的进度码（需要 iOS / iPadOS 16.4 以上）。请在原设备取消勾选「错题」「地图」后重新生成，会得到不压缩的码。");
+    }
     const ds = new DecompressionStream("gzip");
     const b = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).blob();
     return await b.text();
@@ -1418,13 +1684,37 @@ function pickCode(text) {
   while (body.length % 4) body += "=";
   return mm[1] + body;
 }
+const hasProgress = p => p.lv.some(L => L.done > 0 || L.plays > 0) || p.wrong.length > 0 ||
+  Object.keys(p.hist).some(d => p.hist[d] && (p.hist[d].n > 0 || p.hist[d].sec > 0)) ||
+  (p.today && (p.today.n > 0 || p.today.sec > 0)) ||
+  (p.stat && Object.keys(p.stat).some(k => p.stat[k] > 0));
 async function importCode(code) {
   try {
     const text = await decodeCode(code);
     const o = JSON.parse(text);
-    if (!confirm("导入进度码？\n\n会覆盖本机当前档案「" + prof().name + "」的进度（名字、今日、错题、地图）。")) return;
-    applyPortable(o);
-    save(); renderHome();
+    const from = cleanName(o.nm) || "孩子";
+    validatePortable(o);
+    if ($("asNew") && $("asNew").checked) {
+      // 导入为新档案：另起一个孩子，本机已有的档案一个都不动
+      if (!confirm("把进度码里「" + from + "」的进度导入为一个新档案？\n\n本机已有的档案都不会被改动。")) return;
+      const p = createProfile(from);
+      applyPortable(o, p);
+      S.profiles.push(p);
+      S.cur = S.profiles.length - 1;
+      save(); renderHome();
+      $("codeHint").textContent = "已新建档案：" + p.name + "（现在是当前孩子）";
+      return;
+    }
+    const cur = prof();
+    // 码里的名字和当前档案对不上、当前档案又有进度时，多提醒一句，免得盖掉另一个孩子
+    const warn = (from !== cur.name && hasProgress(cur))
+      ? "\n\n注意：进度码是「" + from + "」的，当前档案是「" + cur.name + "」，它已有的进度会被盖掉。不想覆盖的话，取消后勾选「导入为新档案」。"
+      : "";
+    if (!confirm("导入进度码？\n\n会覆盖本机当前档案「" + cur.name + "」的进度（名字、今日、错题、地图）。" + warn)) return;
+    const staged = JSON.parse(JSON.stringify(cur));
+    applyPortable(o, staged);
+    S.profiles[S.cur] = staged;
+    save(staged.id); renderHome();
     $("codeHint").textContent = "已导入：" + prof().name + " 的进度";
   } catch (e) {
     $("codeHint").textContent = "进度码无效：" + ((e && e.message) || e);
@@ -1439,8 +1729,10 @@ $("mkCode").onclick = async () => {
     : "二维码生成失败（" + r + "），可以复制下面的文本码";
 };
 $("copyCode").onclick = async () => {
-  if (!$("codeBox").value) $("codeBox").value = await encodeCode(packPortable($("withWrong").checked, $("withMap").checked));
-  const t = $("codeBox").value;
+  const t = await encodeCode(packPortable($("withWrong").checked, $("withMap").checked));
+  $("codeBox").value = t;
+  $("qrBox").classList.add("hide");
+  $("qrHint").classList.add("hide");
   const done = () => { $("codeHint").textContent = "已复制，去新设备粘贴后点「从文本进度码恢复」。"; };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(t).then(done).catch(() => { $("codeBox").select(); $("codeHint").textContent = "已选中，长按/按 Ctrl+C 复制。"; });
@@ -1550,11 +1842,11 @@ $("qrFile").onchange = e => {
 $("resetAll").onclick = () => {
   if (!confirm("清空全部档案和进度？")) return;
   if (!confirm("再确认一次：清空后不能恢复。")) return;
-  S = fresh(); save(); renderHome();
+  S = { ...fresh(), epoch: pageId + ":" + (saveSeq + 1) }; save(); renderHome();
 };
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") { pauseCd(); stopDayTimer(); }
+  if (document.visibilityState === "hidden") { stashLeft(); pauseCd(); stopDayTimer(); save(); }   // 切后台可能就被系统杀掉，先存
   else if (!$("play").classList.contains("hide")) { resumeCd(); startDayTimer(); }
 });
 

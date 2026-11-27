@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="build" content="v1.0.11">
+<meta name="build" content="v1.0.13">
 <title>围棋死活大师 · 过关斩将</title>
 <link rel="stylesheet" href="style.css">
 <!--PWA-HEAD-->
@@ -118,7 +118,7 @@
       <span class="inline"><button class="chip on" id="sfxBtn">开</button>
         <input id="sfxVol" type="range" min="0" max="100" step="5" value="45" title="音量"></span>
     </div>
-    <div class="row"><span>过关后自动进入下一关</span><button class="chip on" id="autoBtn">开</button></div>
+    <div class="row"><span>答对后自动翻题</span><button class="chip on" id="autoBtn">开</button></div>
   </section>
 
   <details class="fold card">
@@ -153,6 +153,8 @@
       </div>
       <ul class="warn">
         <li>别用无痕模式、别清浏览器数据，进度存在本机，清掉就没了。</li>
+        <li>iPhone / iPad 上在 Safari 里直接用的话，连续 7 天没打开，Safari 可能自动清掉进度；加到主屏幕后打开就不会。</li>
+        <li>主屏幕图标和 Safari 的进度是分开存的：在 Safari 里练过再加到主屏幕，要先用「备份 · 换设备」把进度码搬过去。</li>
         <li>iPad / iPhone 用 Safari 打开 → 分享 → 添加到主屏幕，以后全屏打开、断网也能做。</li>
       </ul>
       <button class="btn quiet" id="resetAll">清空全部档案和进度</button>
@@ -183,6 +185,7 @@
       <button class="btn quiet" id="copyCode">复制进度码（文本）</button>
       <textarea id="codeBox" class="codeBox" rows="3" spellcheck="false"
         placeholder="点「显示本机进度二维码」后，进度码会出现在这里；也可以把别的设备的码粘进来再点恢复"></textarea>
+      <label class="chk"><input type="checkbox" id="asNew"> 导入为新档案（不覆盖当前孩子）</label>
       <button class="btn quiet" id="useCode">从文本进度码恢复</button>
 
       <button class="btn quiet" id="scanCode">扫码导入（用这台设备的相机）</button>
@@ -197,11 +200,11 @@
 
       <label class="chk"><input type="checkbox" id="withWrong" checked> 连错题记录一起搬</label>
       <label class="chk"><input type="checkbox" id="withMap" checked> 连活跃地图一起搬</label>
-      <div class="hint" id="codeHint">导入会覆盖本机当前档案（名字、进度、今日统计、错题、地图）。</div>
+      <div class="hint" id="codeHint">导入默认覆盖本机当前档案（名字、进度、今日统计、错题、地图）；勾选「导入为新档案」则另建一个孩子。</div>
     </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.11</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.13</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -257,7 +260,7 @@
   var btn = document.getElementById("checkUpdate");
   if (!ok) { if (btn) btn.style.display = "none"; return; }
 
-  var reg = null, waiting = null, asked = false, pending = false, snoozeUntil = 0;
+  var reg = null, asked = false, pending = false, snoozeUntil = 0;
   var bar = document.getElementById("updateBar");
   var play = document.getElementById("play");
   function playing() { return !!(play && !play.classList.contains("hide")); }
@@ -266,8 +269,7 @@
   function hideBar() { if (bar) bar.classList.add("hide"); }
 
   // 做题中先挂起，回到首页再提示
-  function showUpdate(r) {
-    waiting = r;
+  function showUpdate() {
     if (snoozed()) return;
     if (playing()) { pending = true; return; }
     pending = false;
@@ -300,15 +302,18 @@
     }).catch(function () {});
   });
 
-  // 更新一律先问：新 SW 接管后只在底部弹「有新版本」，不再自己刷页面。
-  var hadController = !!navigator.serviceWorker.controller;
+  // 更新一律先问：新 SW 装好后只在等待，用户点了「点这里更新」才接管并刷新页面。
+  var hadController = !!navigator.serviceWorker.controller, swapped = false, reloading = false;
+  function reloadOnce() { if (reloading) return; reloading = true; location.reload(); }
   navigator.serviceWorker.addEventListener("controllerchange", function () {
-    if (asked) { location.reload(); return; }      // 用户点了「点这里更新」
-    if (hadController) showUpdate(reg);
+    if (asked) { reloadOnce(); return; }           // 用户点了「点这里更新」
+    if (!hadController) return;                    // 第一次安装接管，不用提示
+    swapped = true;                                // 别的窗口已经换成新版本，这页刷新一下就是新的
+    showUpdate(reg);
   });
 
-  // 版本比对：读线上 version.txt（构建哈希）。比问 SW 靠得住——sw.js 是安装即接管，
-  // 永远没有 waiting 的 worker，只看 reg.waiting 会一直误报"已是最新"。
+  // 版本比对：读线上 version.txt（构建哈希）。新 SW 还没下载下来时 reg.waiting 是空的，
+  // 只看它会误报"已是最新"；version.txt 能更早知道线上有新版。
   var BUILD = (document.querySelector('meta[name="build"]') || {}).content || "";
   function checkBuild(cb) {
     if (!BUILD) { cb(null); return; }
@@ -326,33 +331,47 @@
       .catch(function () { cb(null); });
   }
 
-  // 清缓存 + 注销 SW + 带参数重载：真正把页面换成最新的一版
-  function reloadFresh(fail) {
-    var bad = function (m) { if (fail) fail(m); };
-    if (!navigator.onLine) { bad("网络不通"); return; }        // 断网时绝不动离线缓存
-    fetch("__ping?ts=" + Date.now(), { cache: "no-store" })     // 没被 SW 缓存过的地址
-      .then(function (r) {
-        if (!r || r.status === 503 || r.status >= 500) throw new Error("offline");
-        return caches.keys();
-      })
-      .then(function (keys) {
-        return Promise.all(keys.filter(function (k) { return k.indexOf("gshj-") === 0; })
-          .map(function (k) { return caches.delete(k); }));
-      })
-      .then(function () { return navigator.serviceWorker.getRegistration(); })
-      .then(function (r) { return r ? r.unregister() : null; })
-      .then(function () { location.replace(location.pathname + "?u=" + Date.now()); })
-      .catch(function () { bad(navigator.onLine ? "更新失败" : "网络不通"); });
+  // 让等待中的新版本接管，接管后刷新。旧缓存要等新 SW 在 activate 时才删，那时新缓存
+  // 已经完整下载好，所以任何时候断网都至少有一个完整版本能用。
+  var go = document.getElementById("updateGo"), later = document.getElementById("updateLater");
+  var goTimer = 0;
+  function goMsg(m) {
+    if (!go) return;
+    go.textContent = m;
+    clearTimeout(goTimer);
+    goTimer = setTimeout(function () { go.textContent = "点这里更新"; }, 2600);
+  }
+  function activate(w) {
+    asked = true;
+    if (go) go.textContent = "正在更新…";
+    w.addEventListener("statechange", function () {   // controllerchange 偶尔不来时兜底
+      if (w.state === "activated") reloadOnce();
+      else if (w.state === "redundant") { asked = false; goMsg("更新失败"); }
+    });
+    w.postMessage("SKIP_WAITING");
+  }
+  // 还没有等待中的新版本：先让浏览器下载安装，装好再接管。下载失败就保持旧版本，不动任何缓存。
+  function fetchNew() {
+    if (!reg) { goMsg("更新失败"); return; }
+    if (!navigator.onLine) { goMsg("网络不通"); return; }
+    var fail = function () { goMsg(navigator.onLine ? "更新失败" : "网络不通"); };
+    if (go) go.textContent = "正在下载…";
+    reg.update().then(function () {
+      if (reg.waiting) { activate(reg.waiting); return; }
+      var w = reg.installing;
+      if (!w) { goMsg("新版本还没就绪，稍后再试"); return; }   // 线上 sw.js 还没变
+      w.addEventListener("statechange", function () {
+        if (w.state === "installed") activate(w);
+        else if (w.state === "redundant") fail();
+      });
+    }).catch(fail);
   }
 
-  var go = document.getElementById("updateGo"), later = document.getElementById("updateLater");
   if (go) go.onclick = function () {
-    if (waiting && waiting.waiting) { asked = true; waiting.waiting.postMessage("SKIP_WAITING"); return; }
-    go.textContent = "正在更新…";
-    reloadFresh(function (m) {
-      go.textContent = m;
-      setTimeout(function () { go.textContent = "点这里更新"; }, 2600);
-    });
+    if (reloading) return;
+    if (swapped) { reloadOnce(); return; }
+    if (reg && reg.waiting) { activate(reg.waiting); return; }
+    fetchNew();
   };
   if (later) later.onclick = function () {
     snoozeUntil = Date.now() + 30 * 60 * 1000;
