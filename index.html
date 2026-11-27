@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="build" content="v1.0.19">
+<meta name="build" content="v1.0.20">
 <title>围棋死活大师 · 过关斩将</title>
 <link rel="stylesheet" href="style.css">
 <!--PWA-HEAD-->
@@ -46,8 +46,8 @@
     <button class="btn primary-arrow hide" id="newRun">重刷本难度</button>
     <div class="hint hide" id="newHint"></div>
     <details id="limitDetails" class="limit-details">
-      <summary><span>仅第一手计时</span><b id="limitSummary">首手 60 秒</b></summary>
-      <div class="seg" id="limitSeg" role="group" aria-label="每题第一手的限时">
+      <summary><span>每题限时</span><b id="limitSummary">60 秒</b></summary>
+      <div class="seg" id="limitSeg" role="group" aria-label="每题的限时">
         <button type="button" data-s="15">15 秒</button>
         <button type="button" data-s="30">30 秒</button>
         <button type="button" data-s="60">60 秒</button>
@@ -127,7 +127,7 @@
     <summary>怎么玩</summary>
     <div class="foldbody">
       <ol class="how">
-        <li><b>先选时间</b>15 / 30 / 60 秒，只限<b>每一题的第一步</b>：必须在秒数内走出正解第一手，之后电脑自动应对，直到整题走完。</li>
+        <li><b>先选时间</b>15 / 30 / 60 秒，这是<b>每一题的固定时间</b>：从翻到这题就开始倒数，走对了第一手也不停，一直数到做完或者时间到。时间到记一次错。</li>
         <li><b>再选难度</b>只有两个入口：<b>级位</b>（90 关）和<b>段位</b>（60 关）。点一下选中，再点「开始闯关」。</li>
         <li><b>孩子档案</b>顶部「练习档案」可以给每个孩子建一个档案，级位/段位的进度各存各的，互不影响。</li>
         <li><b>每关 10 题，允许错 1 题</b>错题不会当场结束，把 10 题做完再一起算总账：错 2 题以上本关不通过，第 10 题做完会直接弹窗，点一下从本关第 1 题重来。超时也算错一题；下在非法点（已经有子 / 不入气 / 打劫）只提示，不算错。</li>
@@ -200,7 +200,7 @@
   </div>
   </details>
 
-  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.19</span>
+  <div class="foot">题库来自 2001 年《围棋死活大师-过关斩将》原盘 · 仅供自家练习使用 · <span class="ver">版本 v1.0.20</span>
 <!--PWA-UPDATE--><br><button class="chk" id="checkUpdate">检查更新</button>
 <div class="updateBar hide" id="updateBar" role="status" aria-live="polite">
   <span>有新版本 · 更新会重新打开页面，进度已自动保存</span>
@@ -223,7 +223,7 @@
     <section class="play-question" aria-label="当前题目">
       <div class="play-position" id="phead">级位 · 第 1 轮 · 第 1 关 · 第 1 / 10 题</div>
       <div class="play-dots" id="playDots" aria-hidden="true"></div>
-      <div class="goal-line"><h2 class="goal" id="goal">死活题：黑先净杀</h2><span id="clock">首手 60 秒</span></div>
+      <div class="goal-line"><h2 class="goal" id="goal">死活题：黑先净杀</h2><span id="clock">本题 60 秒</span></div>
     </section>
     <div class="wd" id="boardFrame">
       <svg id="svg" viewBox="0 0 400 400" aria-label="围棋棋盘"></svg>

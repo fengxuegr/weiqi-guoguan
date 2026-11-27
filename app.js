@@ -19,7 +19,7 @@ const LEVELS = [
 ];
 
 /* ---------- 存档 ---------- */
-// moves：本题已落的手（[r,c,color]），persist 首手已过时存下来，返回/切后台/刷新回来仍能接着走、且不再计时
+// moves：本题已落的手（[r,c,color]），存下来是为了返回/切后台/刷新回来能接着走
 // movesFor：这些手属于哪一题（存 L.done）。换题后旧的手对不上就不再重放，防止把上一题的棋子搬到新题上。
 function blankLv() { return { round: 1, done: 0, guanDone: 0, wrong: 0, plays: 0, active: false, left: 0, bestRound: 0, moves: [], movesFor: -1 }; }
 function blankDay() { return { d: "", n: 0, sec: 0, fo: 0, fa: 0, bonus: 0 }; }   // bonus：当天「再来 5 分钟」加的秒数，换日自然清零
@@ -652,7 +652,7 @@ function renderHome() {
     b.classList.toggle("on", selected);
     b.setAttribute("aria-pressed", String(selected));
   });
-  $("limitSummary").textContent = "首手 " + S.limit + " 秒";
+  $("limitSummary").textContent = "每题 " + S.limit + " 秒";
 
   const st = prof().stat;
   $("stOk").textContent = st.guans;
@@ -700,9 +700,11 @@ function hideMask() {
 }
 
 /* ---------- 每题倒计时 ---------- */
+// 口径：一道题给固定秒数，从翻到这题就开始倒数，一直到做完或超时。
+// 首手走对了也不停表（原来「首手过了就停」是旧规矩，会让后面的手完全不计时）。
 let cdEnd = 0, cdLeft = null, cdTimer = null;
-function expireFirstMove() {
-  if (practice || answered || firstMove || !cdTimer || Date.now() < cdEnd) return false;
+function expireTiTime() {
+  if (practice || answered || !cdTimer || Date.now() < cdEnd) return false;
   tickCd();
   return true;
 }
@@ -710,7 +712,7 @@ function tickCd() {
   const left = Math.max(0, cdEnd - Date.now());
   cdLeft = left;
   const el = $("clock");
-  el.textContent = "首手 " + Math.max(0, Math.ceil(left / 1000)) + " 秒";
+  el.textContent = "本题 " + Math.max(0, Math.ceil(left / 1000)) + " 秒";
   el.classList.toggle("warn", left <= 10000);
   if (left <= 0) { stopCd(); tiFailed("timeout"); }
 }
@@ -728,13 +730,13 @@ function stopCd() {
   cdLeft = null;
 }
 function pauseCd() {
-  if (!cdTimer || expireFirstMove()) return;
+  if (!cdTimer || expireTiTime()) return;
   const remaining = Math.max(0, cdEnd - Date.now());
   stopCd();
   cdLeft = remaining;
 }
 function resumeCd() {
-  if (cdTimer || practice || answered || firstMove || cdLeft === null) return;
+  if (cdTimer || practice || answered || cdLeft === null) return;
   startCd(cdLeft);
 }
 
@@ -973,7 +975,7 @@ function tapPoint(e) {
 
 function onTap(e) {
   if (practice) { onPracticeTap(e); return; }
-  if (answered || expireFirstMove()) return;
+  if (answered || expireTiTime()) return;
   const pt = tapPoint(e);
   if (!pt) { fb("请点在棋盘交叉点上（边框不算落子）。", ""); return; }
   const r = pt[0], c = pt[1];
@@ -992,11 +994,8 @@ function onTap(e) {
     step = j.step;
     if (wasFirst) {
       firstMove = true;
-      stopCd();
-      const el2 = $("clock");
-      el2.className = "done";
-      el2.textContent = "首手已通过";
-      slotState().moves = blackMoves();   // 首手一过就存，返回/刷新回来能接着走且不计时
+      // 计时照走：这题固定时间，首手过了也继续倒数
+      slotState().moves = blackMoves();   // 已经走的手存下来，返回/刷新回来能接着走
       slotState().movesFor = slotState().done;
       save();
     }
@@ -1080,9 +1079,9 @@ function tiFailed(reason, r, c) {
   $("pcount").textContent = okN;
   renderProgress("playDots", guanEnd ? N_TI : L.guanDone);
   $("clock").className = "stopped";
-  $("clock").textContent = reason === "timeout" ? "首手超时" : "计时已停";
+  $("clock").textContent = reason === "timeout" ? "本题超时" : "计时已停";
   const why = reason === "skip" ? "已跳过，记 1 错。"
-    : reason === "timeout" ? "首手时间到，记 1 错。" : "这手没走对。";
+    : reason === "timeout" ? "本题时间到，记 1 错。" : "这手没走对。";
   fb(why + (wrongN >= 2 && restN > 0
     ? " 本关不能通过，可做完剩下 " + restN + " 题，或重新开始。"
     : guanEnd ? " 本关已做完。" : " 可以先看看正解。"), "no");
@@ -1154,8 +1153,8 @@ function enterTi() {
   practice = false; practiceLine = null;
   alive = cur.qa && cur.qa.length ? cur.qa.slice() : [cur.q || []];
 
-  // 恢复上一次离开时本题已走的手：首手已经走对，就不该再重新计时（不然返回/切后台/刷新
-  // 就能把时限刷回满格，等于这道题永远不算超时）。逐手重放，校验确实还在解上。
+  // 恢复上一次离开时本题已走的手：返回/切后台/刷新回来能接着走，
+  // 但计时照旧继续（这题是固定时间，不会因为离开而重置或停表）。
   // 只有「存下来的手确实是这一题的」才恢复，避免换题后把上一题的棋子搬过来。
   const saved = (L.movesFor === L.done && Array.isArray(L.moves)) ? L.moves : [];
   let replayOK = true;
@@ -1186,17 +1185,12 @@ function enterTi() {
   $("skipBtn").disabled = true;
   setTimeout(() => { if (!answered && !practice) $("skipBtn").disabled = false; }, 700);
   syncRestart();
-  fb(L.wrong === 0 ? "请在棋盘交叉点落子。第一手走对后不再计时。"
+  fb(L.wrong === 0 ? "请在棋盘交叉点落子。这题限时 " + S.limit + " 秒，走对了也继续计时。"
      : (L.wrong === 1 ? "本关已错 1 题，再错 1 题，本关不通过。"
         : "本关不能通过，可做完剩余题目或重新开始。"), "");
   draw();
-  if (firstMove) {
-    // 首手已经走对：这题剩下的部分不计时，也别再启动倒计时
-    stopCd();
-    $("clock").className = "done";
-    $("clock").textContent = "首手已通过";
-    fb("接着上一步走完这题（首手已过，不再计时）。", "ok");
-  } else {
+  {
+    // 一题固定时间：不管首手过没过、回来时走到哪儿，都从剩余秒数接着倒数
     const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
     L.left = 0;
     save();
@@ -1503,7 +1497,7 @@ function enterPlay() {
 // 本题第一手还没走时离开（回首页 / 切后台 / 被系统杀掉），把剩余秒数记下来，回来接着倒数，
 // 不然「返回 → 继续」就能把倒计时刷回满格。
 function stashLeft() {
-  if (!cdTimer || answered || firstMove || practice || expireFirstMove()) return;
+  if (!cdTimer || answered || practice || expireTiTime()) return;
   const L = slotState();
   L.left = Math.max(1, cdEnd - Date.now());
   save();
@@ -1541,10 +1535,10 @@ $("whoBtn").onclick = () => {
 
 $("ansBtn").onclick = () => { if (practice) toggleGuide(); else showAnswerRow(); };
 $("skipBtn").onclick = () => {
-  if (answered || expireFirstMove()) return;
+  if (answered || expireTiTime()) return;
   if ($("skipBtn").disabled || Date.now() - tiStart < 700) return;   // 刚翻到这一题，挡掉连点/布局上移带来的误触
   if (!confirm("跳过这题？会记一次错（本关只允许错 1 题）。")) return;
-  if (!expireFirstMove()) tiFailed("skip");
+  if (!expireTiTime()) tiFailed("skip");
 };
 // 错满 2 题后重开本关：本关做过的题清零，从本关第 1 题重来
 $("restartGuan").onclick = () => {
