@@ -1202,6 +1202,9 @@ function markLine(idx) {
      "红圈标出第一手，数字标出手顺。", "");
 }
 function showAnswerRow() {
+  // 第 10 题挂着 900ms 的自动结算定时器；先看答案就先把它取消，
+  // 否则答案刚显示就被 afterTi() 连带结算弹窗一起冲掉。
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
   const row = $("ansRow");
   const lines = aliveLines();
   row.innerHTML = "";
@@ -1222,6 +1225,13 @@ function showAnswerRow() {
   wb.type = "button"; wb.className = "btn walk"; wb.id = "walkBtn"; wb.textContent = "自己再走一次";
   wb.onclick = () => startPractice();
   row.appendChild(wb);
+  // 第 10 题看完答案后要给一条继续结算的路；定时器已取消，不能干等着。
+  if (pendingResult) {
+    const cb = document.createElement("button");
+    cb.type = "button"; cb.className = "btn"; cb.id = "answerDoneBtn"; cb.textContent = "看好了，继续";
+    cb.onclick = () => { clearTimeout(autoTimer); autoTimer = null; afterTi(); };
+    row.appendChild(cb);
+  }
   row.classList.remove("hide");
   $("ansBtn").classList.add("hide");
   markLine(0);
