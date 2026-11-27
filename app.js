@@ -19,7 +19,9 @@ const LEVELS = [
 ];
 
 /* ---------- 存档 ---------- */
-function blankLv() { return { round: 1, done: 0, guanDone: 0, wrong: 0, plays: 0, active: false, left: 0, bestRound: 0 }; }
+// moves：本题已落的手（[r,c,color]），persist 首手已过时存下来，返回/切后台/刷新回来仍能接着走、且不再计时
+// movesFor：这些手属于哪一题（存 L.done）。换题后旧的手对不上就不再重放，防止把上一题的棋子搬到新题上。
+function blankLv() { return { round: 1, done: 0, guanDone: 0, wrong: 0, plays: 0, active: false, left: 0, bestRound: 0, moves: [], movesFor: -1 }; }
 function blankDay() { return { d: "", n: 0, sec: 0, fo: 0, fa: 0, bonus: 0 }; }   // bonus：当天「再来 5 分钟」加的秒数，换日自然清零
 function blankStat() { return { guans: 0, runs: 0, timeout: 0, skip: 0, wrong: 0, ok: 0 }; }
 let SEQ = 1;
@@ -47,7 +49,7 @@ function settleGuan(L, gi, st) {
   const len = bankLenOf(gi);
   const no = Math.ceil(L.done / N_TI);
   const wrong = L.wrong, correct = N_TI - wrong;
-  L.guanDone = 0; L.wrong = 0; L.left = 0;
+  L.guanDone = 0; L.wrong = 0; L.left = 0; L.moves = [];
   if (wrong >= 2) {
     L.done = Math.max(0, L.done - N_TI);
     L.active = true;
@@ -75,7 +77,7 @@ function repairLv(L, gi, st) {
   L.guanDone = Math.min(L.guanDone, L.done);
   if ((L.done - L.guanDone) % N_TI !== 0) {          // 关边界错位：本关从第 1 题重来
     L.done = Math.floor(L.done / N_TI) * N_TI;
-    L.guanDone = 0; L.wrong = 0;
+    L.guanDone = 0; L.wrong = 0; L.moves = [];
     return L;
   }
   const target = Math.min(L.round * ROUND_UNIT, len);
@@ -83,7 +85,7 @@ function repairLv(L, gi, st) {
     (L.wrong > 0 || (L.done >= target && L.round < maxRoundOfLen(len)));
   if (unsettled) L.guanDone = N_TI;
   L.wrong = Math.min(L.wrong, L.guanDone);
-  if (L.guanDone >= N_TI) settleGuan(L, gi, st);
+  if (L.guanDone >= N_TI) { settleGuan(L, gi, st); L.moves = []; }
   return L;
 }
 function normLv(L) {
@@ -101,7 +103,9 @@ function normLv(L) {
     plays: Math.max(0, x.plays | 0),
     active: !!x.active,
     left: Math.max(0, x.left | 0),
-    bestRound: Math.max(0, x.bestRound == null ? round : x.bestRound | 0)
+    bestRound: Math.max(0, x.bestRound == null ? round : x.bestRound | 0),
+    moves: Array.isArray(x.moves) ? x.moves.filter(m => Array.isArray(m) && m.length >= 3).slice(0, 200) : [],
+    movesFor: x.movesFor == null ? -1 : (x.movesFor | 0)
   };
 }
 function normalize(o) {
@@ -945,6 +949,15 @@ function branchStep(lines, st, r, c, question) {
   }
   return { alive: aliveOK, hit: true, white, step: s, done: aliveOK.some(b => s >= b.length) };
 }
+// 只存黑棋下的手：白棋是程序自动应的，重放时 branchStep 会再应一次，存进去会重复落子
+function blackMoves() { return placed.filter(p => p[2] === 1).map(p => [p[0], p[1], 1]); }
+// 把当前已走的手写进存档，并记下它们属于哪一题（L.done）
+function saveMoves() {
+  const L = slotState();
+  L.moves = blackMoves();
+  L.movesFor = L.done;
+  save();
+}
 // 把 SVG 视图坐标换算为棋盘交叉点；棋盘外（含木质边框）返回 null，不再 clamp 到边缘
 function tapPoint(e) {
   const el = e.currentTarget, rect = el.getBoundingClientRect(), vb = el.viewBox.baseVal;
@@ -983,11 +996,21 @@ function onTap(e) {
       const el2 = $("clock");
       el2.className = "done";
       el2.textContent = "首手已通过";
+      slotState().moves = blackMoves();   // 首手一过就存，返回/刷新回来能接着走且不计时
+      slotState().movesFor = slotState().done;
+      save();
     }
     const caps = draw(from);
     if (caps) SFX.capture();
     if (j.done) tiSolved();
-    else fb("对，白棋应了一手" + (caps ? "，提掉 " + caps + " 子" : "") + "，继续走完", "ok");
+    else {
+      if (firstMove) {                                       // 中途每手都记，随时被杀掉也能续
+        slotState().moves = blackMoves();
+        slotState().movesFor = slotState().done;
+        save();
+      }
+      fb("对，白棋应了一手" + (caps ? "，提掉 " + caps + " 子" : "") + "，继续走完", "ok");
+    }
   } else {
     tiFailed("wrong", r, c);
   }
@@ -1008,6 +1031,7 @@ function tiSolved() {
   L.guanDone++;
   L.bestRound = Math.max(L.bestRound, L.round);
   L.left = 0;
+  L.moves = [];                            // 这题结束了，别把已走的手带给下一题
   const okN = correctOf(L);
   if (L.guanDone >= N_TI) pendingResult = settleGuan(L, S.sel, p.stat);   // 第 10 题：当场结算并存档
   save();
@@ -1031,6 +1055,7 @@ function tiFailed(reason, r, c) {
   L.done++;
   L.guanDone++;
   L.left = 0;
+  L.moves = [];                            // 这题结束了，别把已走的手带给下一题
   if (reason === "wrong") { p.stat.wrong++; wrongMarks.push([r, c]); draw(); SFX.wrong(); }
   else {
     if (reason === "skip") p.stat.skip = (p.stat.skip | 0) + 1;   // 主动跳过单独计，不混进「超时次数」
@@ -1128,6 +1153,22 @@ function enterTi() {
   wrongMarks = [];
   practice = false; practiceLine = null;
   alive = cur.qa && cur.qa.length ? cur.qa.slice() : [cur.q || []];
+
+  // 恢复上一次离开时本题已走的手：首手已经走对，就不该再重新计时（不然返回/切后台/刷新
+  // 就能把时限刷回满格，等于这道题永远不算超时）。逐手重放，校验确实还在解上。
+  // 只有「存下来的手确实是这一题的」才恢复，避免换题后把上一题的棋子搬过来。
+  const saved = (L.movesFor === L.done && Array.isArray(L.moves)) ? L.moves : [];
+  let replayOK = true;
+  for (const m of saved) {
+    const j = branchStep(alive, step, m[0], m[1], cur);
+    if (!j.hit) { replayOK = false; break; }
+    alive = j.alive;
+    placed.push([m[0], m[1], m[2] || 1]);
+    if (j.white) placed.push([j.white[0], j.white[1], 2]);
+    step = j.step;
+    if (step > 0) firstMove = true;
+  }
+  if (!replayOK) { placed = []; step = 0; firstMove = false; }   // 存档对不上就从头来，别留半截棋盘
   hideMask();
   $("fb").classList.remove("hide");
   hideAnswer();
@@ -1149,11 +1190,19 @@ function enterTi() {
      : (L.wrong === 1 ? "本关已错 1 题，再错 1 题，本关不通过。"
         : "本关不能通过，可做完剩余题目或重新开始。"), "");
   draw();
-  const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
-  L.left = 0;
-  save();
-  tiStart = Date.now();
-  startCd(left);
+  if (firstMove) {
+    // 首手已经走对：这题剩下的部分不计时，也别再启动倒计时
+    stopCd();
+    $("clock").className = "done";
+    $("clock").textContent = "首手已通过";
+    fb("接着上一步走完这题（首手已过，不再计时）。", "ok");
+  } else {
+    const left = L.left > 0 ? Math.min(L.left, S.limit * 1000) : S.limit * 1000;
+    L.left = 0;
+    save();
+    tiStart = Date.now();
+    startCd(left);
+  }
   startDayTimer();                         // 确保计时在跑（不重置基准）
 }
 // 错满 2 题本关已经判死，给一个"重开本关"的显式出口
@@ -1505,6 +1554,7 @@ $("restartGuan").onclick = () => {
   L.guanDone = 0;
   L.wrong = 0;
   L.left = 0;
+  L.moves = [];
   L.active = true;
   save();
   $("ansRow").classList.add("hide");
@@ -1584,6 +1634,7 @@ $("mSetApply").onclick = () => {
   L.wrong = 0;
   L.active = true;
   L.left = 0;
+  L.moves = [];
   L.bestRound = Math.max(L.bestRound, m.round);
   save(); renderHome();
   $("mSetHint").textContent = "已设置：" + LEVELS[m.lv].nm + " · 第 " + m.round + " 轮 · 第 " + m.guan + " 关第 " + m.ti + " 题";
