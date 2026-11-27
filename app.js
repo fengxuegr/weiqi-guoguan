@@ -1389,7 +1389,11 @@ function showTimeUp() {
   setMask("今天的时间到了", "今天已做 " + Math.round(prof().today.sec / 60) + " 分钟。可以休息，也可以再来 5 分钟。",
           "再来 5 分钟", () => {
             ensureToday();
-            prof().today.bonus = (prof().today.bonus || 0) + 300;   // 只加今天、只加这个孩子
+            // 不能只把配额 +300：时间到的时候「已用时长」往往已经超过配额了（弹窗期间、
+            // 切后台回来、之前多做的都算在内），加完还是 0。改成按当前已用时长重算，
+            // 保证从现在起正好还有 5 分钟。
+            const spent = Math.round(daySpentMs() / 1000);
+            prof().today.bonus = Math.max(0, spent + 300 - S.min * 60);
             save();
             hideMask();
             enterTi();
